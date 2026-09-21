@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .channel import assess_channel_event
+from .channel import assess_channel_event, channel_state_at
 from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError, create_event
 
 
@@ -127,10 +127,25 @@ def assess_decision(
 
         channel_event_id = evidence.payload.get("channel_event_id")
         if isinstance(channel_event_id, str) and channel_event_id:
-            channel_event_ids.append(channel_event_id)
-            channel_assessment = assess_channel_event(ledger.get(channel_event_id))
-            if channel_assessment.status != "ADEQUATE":
-                inadequate_channel_event_ids.append(channel_event_id)
+            bound_channel = ledger.get(channel_event_id)
+            channel_id = bound_channel.payload.get("channel_id")
+            if not isinstance(channel_id, str) or not channel_id:
+                missing_channel_assurance_event_ids.append(event_id)
+            else:
+                channel_assessment = channel_state_at(
+                    ledger,
+                    channel_id=channel_id,
+                    actor=event.actor,
+                    decision_time=event.event_time,
+                )
+                if channel_assessment is None:
+                    missing_channel_assurance_event_ids.append(event_id)
+                else:
+                    channel_event_ids.append(channel_assessment.channel_event_id)
+                    if channel_assessment.status != "ADEQUATE":
+                        inadequate_channel_event_ids.append(
+                            channel_assessment.channel_event_id
+                        )
         elif event.payload.get("require_channel_assurance") is True:
             missing_channel_assurance_event_ids.append(event_id)
 
