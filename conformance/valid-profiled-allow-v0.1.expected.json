@@ -1,0 +1,16 @@
+{
+  "vector": "valid-profiled-allow-v0.1",
+  "lifecycle_id": "vector-1",
+  "decision_event_id": "decision-1",
+  "expected_assessment_status": "VALID",
+  "expected_next_transition": "ALLOW",
+  "expected_independent_source_groups": ["provider-a"],
+  "expected_independence_shortfall": 0,
+  "notes": [
+    "The vector fixes exact canonical event digests.",
+    "The evidence exists in the actor's historical horizon before the decision.",
+    "The one required evidence item was consulted.",
+    "The one required independent source group is present.",
+    "No contradiction, unresolved assumption, or contamination is present."
+  ]
+}
