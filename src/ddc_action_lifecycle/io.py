@@ -9,6 +9,19 @@ from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError, e
 DEFAULT_MAX_JSONL_BYTES = 32 * 1024 * 1024
 
 
+def _reject_constant(value: str):
+    raise ValueError(f"non-finite JSON value is not permitted: {value}")
+
+
+def _reject_duplicate_keys(pairs):
+    out = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError(f"duplicate JSON key: {key}")
+        out[key] = value
+    return out
+
+
 def dumps_jsonl(events: Iterable[LifecycleEvent]) -> str:
     return "\n".join(
         json.dumps(event.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -31,8 +44,12 @@ def loads_jsonl(
         if not line:
             continue
         try:
-            raw = json.loads(line)
-        except (json.JSONDecodeError, RecursionError) as exc:
+            raw = json.loads(
+                line,
+                parse_constant=_reject_constant,
+                object_pairs_hook=_reject_duplicate_keys,
+            )
+        except (json.JSONDecodeError, RecursionError, ValueError) as exc:
             raise LifecycleValidationError(
                 f"line {line_no}: invalid JSON: {exc}"
             ) from exc
