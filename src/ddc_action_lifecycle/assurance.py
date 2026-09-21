@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .channel import assess_channel_event, channel_state_at
+from .channel import channel_state_at
 from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError, create_event
 
 
@@ -28,6 +28,8 @@ class DecisionAssessment:
     independence_shortfall: int
     unresolved_assumptions: tuple[str, ...]
     contradictions: tuple[str, ...]
+    decision_reasons: tuple[str, ...]
+    channel_reasons: tuple[str, ...]
     reasons: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -51,6 +53,8 @@ class DecisionAssessment:
             "independence_shortfall": self.independence_shortfall,
             "unresolved_assumptions": list(self.unresolved_assumptions),
             "contradictions": list(self.contradictions),
+            "decision_reasons": list(self.decision_reasons),
+            "channel_reasons": list(self.channel_reasons),
             "reasons": list(self.reasons),
         }
 
@@ -156,25 +160,50 @@ def assess_decision(
     minimum_independent = event.payload.get("minimum_independent_sources", 0)
     independence_shortfall = max(0, minimum_independent - len(independence_groups))
 
-    reasons: list[str] = []
+    decision_reasons: list[str] = []
+    channel_reasons: list[str] = []
     if missing_required:
-        reasons.append("required evidence was not consulted")
+        decision_reasons.append("required evidence was not consulted")
     if unavailable_consulted:
-        reasons.append("consulted evidence was outside the actor's historical horizon")
+        decision_reasons.append(
+            "consulted evidence was outside the actor's historical horizon"
+        )
     if unusable:
-        reasons.append("consulted evidence was not fully usable at decision time")
+        decision_reasons.append(
+            "consulted evidence was not fully usable at decision time"
+        )
     if contaminated:
-        reasons.append("consulted evidence carries post-action contamination")
-    if inadequate_channel_event_ids:
-        reasons.append("evidence channel was inadequate at decision time")
-    if missing_channel_assurance_event_ids:
-        reasons.append("required evidence channel assurance was missing")
+        decision_reasons.append(
+            "consulted evidence carries post-action contamination"
+        )
     if independence_shortfall:
-        reasons.append("independent evidence source requirement was not met")
+        decision_reasons.append(
+            "independent evidence source requirement was not met"
+        )
     if contradictions:
-        reasons.append("decision state contains unresolved contradictions")
+        decision_reasons.append(
+            "decision state contains unresolved contradictions"
+        )
     if assumptions:
-        reasons.append("decision state contains unresolved assumptions")
+        decision_reasons.append(
+            "decision state contains unresolved assumptions"
+        )
+
+    if inadequate_channel_event_ids:
+        channel_reasons.append("evidence channel was inadequate at decision time")
+    if missing_channel_assurance_event_ids:
+        channel_reasons.append("evidence channel assurance was missing")
+
+    require_channel_assurance = event.payload.get("require_channel_assurance") is True
+    if require_channel_assurance:
+        if inadequate_channel_event_ids:
+            decision_reasons.append(
+                "required evidence channel was inadequate at decision time"
+            )
+        if missing_channel_assurance_event_ids:
+            decision_reasons.append(
+                "required evidence channel assurance was missing"
+            )
 
     if inadequate_channel_event_ids:
         evidence_channel_status = "INADEQUATE"
@@ -189,17 +218,21 @@ def assess_decision(
         unavailable_consulted
         or unusable
         or contaminated
-        or inadequate_channel_event_ids
-        or missing_channel_assurance_event_ids
+        or (
+            require_channel_assurance
+            and (inadequate_channel_event_ids or missing_channel_assurance_event_ids)
+        )
     )
     if hard_invalid:
         status = "INVALID"
     elif decision == "ALLOW":
-        status = "INVALID" if reasons else "VALID"
+        status = "INVALID" if decision_reasons else "VALID"
     elif decision in {"BLOCK", "RECHECK", "REQUIRE_HUMAN", "SIMULATE_FIRST"}:
         status = "VALID"
     else:
         status = "INCOMPLETE"
+
+    reasons = decision_reasons + channel_reasons
 
     return DecisionAssessment(
         event_id=event.event_id,
@@ -221,6 +254,8 @@ def assess_decision(
         independence_shortfall=independence_shortfall,
         unresolved_assumptions=assumptions,
         contradictions=contradictions,
+        decision_reasons=tuple(decision_reasons),
+        channel_reasons=tuple(channel_reasons),
         reasons=tuple(reasons),
     )
 
