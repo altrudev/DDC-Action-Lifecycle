@@ -6,6 +6,8 @@ from typing import Iterable
 
 from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError, event_from_dict
 
+DEFAULT_MAX_JSONL_BYTES = 32 * 1024 * 1024
+
 
 def dumps_jsonl(events: Iterable[LifecycleEvent]) -> str:
     return "\n".join(
@@ -14,7 +16,15 @@ def dumps_jsonl(events: Iterable[LifecycleEvent]) -> str:
     ) + "\n"
 
 
-def loads_jsonl(text: str) -> LifecycleLedger:
+def loads_jsonl(
+    text: str,
+    *,
+    max_bytes: int = DEFAULT_MAX_JSONL_BYTES,
+) -> LifecycleLedger:
+    if not isinstance(text, str):
+        raise LifecycleValidationError("lifecycle JSONL must be text")
+    if len(text.encode("utf-8")) > max_bytes:
+        raise LifecycleValidationError("lifecycle JSONL byte limit exceeded")
     ledger: LifecycleLedger | None = None
     for line_no, line in enumerate(text.splitlines(), 1):
         line = line.strip()
@@ -22,7 +32,7 @@ def loads_jsonl(text: str) -> LifecycleLedger:
             continue
         try:
             raw = json.loads(line)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, RecursionError) as exc:
             raise LifecycleValidationError(
                 f"line {line_no}: invalid JSON: {exc}"
             ) from exc
@@ -37,8 +47,15 @@ def loads_jsonl(text: str) -> LifecycleLedger:
     return ledger
 
 
-def load_jsonl(path: str | Path) -> LifecycleLedger:
-    return loads_jsonl(Path(path).read_text(encoding="utf-8"))
+def load_jsonl(
+    path: str | Path,
+    *,
+    max_bytes: int = DEFAULT_MAX_JSONL_BYTES,
+) -> LifecycleLedger:
+    source = Path(path)
+    if source.stat().st_size > max_bytes:
+        raise LifecycleValidationError("lifecycle JSONL byte limit exceeded")
+    return loads_jsonl(source.read_text(encoding="utf-8"), max_bytes=max_bytes)
 
 
 def save_jsonl(path: str | Path, ledger: LifecycleLedger) -> None:
