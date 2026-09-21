@@ -9,6 +9,7 @@ from .assurance import (
     next_transition_admissibility,
 )
 from .interop import action_receipt_reference, replay_reconstruction_reference
+from .relations import RELATION_TYPES, relationship_event
 from .io import dumps_jsonl, load_jsonl, loads_jsonl, save_jsonl
 from .ledger import (
     LifecycleEvent,
@@ -39,6 +40,8 @@ __all__ = [
     "loads_jsonl",
     "next_transition_admissibility",
     "replay_reconstruction_reference",
+    "RELATION_TYPES",
+    "relationship_event",
     "save_jsonl",
     "verify_evidence_bundle",
 ]
