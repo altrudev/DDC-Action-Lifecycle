@@ -56,9 +56,11 @@ def _strings(event: LifecycleEvent, field: str) -> tuple[str, ...]:
 def _is_usable_evidence(event: LifecycleEvent) -> bool:
     if event.phase != "EVIDENCE_STATE":
         return False
+    if event.payload.get("profile") != "ddc.evidence-state.v1":
+        return False
     availability = event.payload.get("availability")
     if availability is None:
-        return True
+        return False
     if not hasattr(availability, "get"):
         return False
     for facet in ("existed", "reachable", "discoverable", "fresh", "accessible", "trusted"):
