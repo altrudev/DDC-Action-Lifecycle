@@ -23,9 +23,9 @@ Risk: available, required, and consulted evidence collapse into one set.
 Response: decision profiles keep required and consulted evidence separate. The runtime computes the actor's historical evidence horizon independently.
 
 ## 5. Causal lens
-Risk: chronology is mistaken for causality.
+Risk: chronology, graph ancestry, evidence dependency, and causality are collapsed into one relationship.
 
-Response: explicit parent_event_ids carry graph ancestry. Temporal ordering alone does not create a causal edge.
+Response: `parent_event_ids` remains graph ancestry only. v0.1 now also supports explicit `RELATIONSHIP` events with typed relations such as CAUSED_BY, SUPPORTED_BY, DERIVED_FROM, CONTAMINATED_BY, RECONSTRUCTS, and RECONCILES. A temporal or ancestry relationship does not by itself assert causality.
 
 ## 6. Branch / retry lens
 Risk: retries overwrite or collapse prior attempts.
@@ -48,9 +48,9 @@ Risk: nested payloads are changed after a digest is created.
 Response: payloads are recursively frozen inside LifecycleEvent. Import re-computes digests and graph validation.
 
 ## 10. Evidence-channel lens
-Risk: evidence existed but was stale, unreachable, inaccessible, undiscoverable, or untrusted.
+Risk: evidence existed but was stale, unreachable, inaccessible, undiscoverable, untrusted, or delivered through a channel that was itself degraded.
 
-Response: the profiled evidence state models these facets independently. A profiled ALLOW is invalid when consulted evidence is not fully usable.
+Response: the profiled evidence state models evidence usability facets independently. First-class EVIDENCE_CHANNEL events record channel identity, actor visibility, state, latency, policy latency bounds, and provenance. A decision may require channel assurance. Decision quality and channel quality are reported separately so a bad outcome does not automatically become a bad-decision claim.
 
 ## 11. Uncertainty lens
 Risk: unknowns or contradictions are silently converted to certainty.
@@ -62,12 +62,17 @@ Risk: oversized events, parent fan-in, or unbounded histories create denial-of-s
 
 Response: the ledger enforces configurable event-count, parent-count, and per-event byte limits. Parent references must already exist, preventing cycles by construction.
 
-## 13. Interoperability lens
+## 13. Determinism lens
+Risk: equivalent lifecycle graphs produce different customer bundles because independent siblings were ingested in different orders.
+
+Response: evidence bundles canonicalize events, branches, and decision summaries by declared stable keys rather than relying on append order. Deterministic export does not erase the original event timestamps or graph.
+
+## 14. Interoperability lens
 Risk: Action Lifecycle absorbs Action Receipt or Agent Replay and destroys their independent trust boundaries.
 
 Response: Action Receipt remains the signed action/decision commitment. Agent Replay remains the reconstruction engine. Lifecycle provides the immutable graph joining them. Physical Gate and BoundaryProof consume or verify separate boundaries.
 
-## 14. Licensing lens
+## 15. Licensing lens
 Risk: public interoperability work accidentally licenses the commercial engine.
 
 Response: schemas, examples, public specification, and future conformance vectors are Apache-2.0. Runtime, DDC Radial logic, orchestration, and enforcement remain proprietary unless separately licensed.
