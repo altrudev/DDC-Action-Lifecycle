@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError
+from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError, create_event
 
 
 @dataclass(frozen=True)
@@ -187,3 +187,38 @@ def next_transition_admissibility(
         "assessment_status": assessment.status,
         "reasons": list(assessment.reasons),
     }
+
+
+def admissibility_event(
+    ledger: LifecycleLedger,
+    decision_event_id: str,
+    *,
+    event_id: str,
+    actor: str,
+    recorded_at: str,
+) -> LifecycleEvent:
+    """Appendable evidence-bound result for the next execution boundary."""
+    assessment = assess_decision(ledger, decision_event_id)
+    transition = next_transition_admissibility(ledger, decision_event_id)
+    decision_event = ledger.get(decision_event_id)
+    return create_event(
+        lifecycle_id=ledger.lifecycle_id,
+        event_id=event_id,
+        phase="ADMISSIBILITY",
+        actor=actor,
+        event_time=recorded_at,
+        recorded_at=recorded_at,
+        parent_event_ids=(decision_event_id,),
+        claim_scope=("next-transition admissibility",),
+        epistemic_state="ATTESTED",
+        evidence_refs=(decision_event.digest,),
+        payload={
+            "profile": "ddc.admissibility.v1",
+            "decision_event_id": decision_event_id,
+            "decision_event_digest": decision_event.digest,
+            "disposition": transition["disposition"],
+            "assessment_status": assessment.status,
+            "reasons": list(assessment.reasons),
+            "historical_horizon_event_ids": list(assessment.horizon_event_ids),
+        },
+    )
