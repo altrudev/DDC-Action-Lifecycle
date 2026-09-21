@@ -5,6 +5,7 @@ import json
 import sys
 
 from .assurance import assess_decision, next_transition_admissibility
+from .bundle import build_evidence_bundle
 from .io import load_jsonl
 from .ledger import LifecycleValidationError
 
@@ -41,6 +42,9 @@ def main(argv=None):
     decision.add_argument("jsonl")
     decision.add_argument("event_id")
 
+    bundle = sub.add_parser("bundle")
+    bundle.add_argument("jsonl")
+
     args = parser.parse_args(argv)
     try:
         ledger = load_jsonl(args.jsonl)
@@ -48,7 +52,7 @@ def main(argv=None):
             result = {"valid": True, "lifecycle_id": ledger.lifecycle_id}
         elif args.cmd == "summary":
             result = _summary(ledger)
-        else:
+        elif args.cmd == "assess-decision":
             assessment = assess_decision(ledger, args.event_id)
             result = {
                 "assessment": assessment.to_dict(),
@@ -56,6 +60,8 @@ def main(argv=None):
                     ledger, args.event_id
                 ),
             }
+        else:
+            result = build_evidence_bundle(ledger)
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     except (LifecycleValidationError, OSError, ValueError) as exc:
