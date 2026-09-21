@@ -8,6 +8,8 @@ from ddc_action_lifecycle import (
     dumps_jsonl,
     loads_jsonl,
     next_transition_admissibility,
+    action_receipt_reference,
+    replay_reconstruction_reference,
 )
 from ddc_action_lifecycle.ledger import canonical_bytes
 
@@ -426,3 +428,123 @@ def test_ledger_rejects_parent_fan_in_over_limit():
             parent_event_ids=["p1", "p2"],
             epistemic_state="INFERRED",
         ))
+
+
+def test_later_backfilled_evidence_cannot_rewrite_historical_horizon():
+    ledger = LifecycleLedger("life-1")
+    late_record = e(
+        event_id="backfilled",
+        phase="EVIDENCE_STATE",
+        actor="provider",
+        event_time="2026-09-20T10:01:00Z",
+        recorded_at="2026-09-20T10:08:00Z",
+        epistemic_state="ATTESTED",
+        payload={
+            "available_to": ["agent-a"],
+            "available_at": "2026-09-20T10:01:00Z",
+        },
+    )
+    ledger.append(late_record)
+    assert ledger.evidence_horizon(
+        actor="agent-a",
+        decision_time="2026-09-20T10:05:00Z",
+    ) == ()
+
+
+def test_non_allow_with_false_consultation_claim_is_invalid():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_decision(
+        required=(),
+        consulted=("missing-evidence",),
+        decision="BLOCK",
+    ))
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.status == "INVALID"
+
+
+def test_profiled_evidence_cannot_claim_availability_after_record_creation():
+    with pytest.raises(LifecycleValidationError, match="available_at cannot be after recorded_at"):
+        e(
+            event_id="future-availability",
+            phase="EVIDENCE_STATE",
+            actor="sensor",
+            event_time="2026-09-20T10:00:00Z",
+            recorded_at="2026-09-20T10:01:00Z",
+            epistemic_state="OBSERVED",
+            payload={
+                "profile": "ddc.evidence-state.v1",
+                "available_to": ["agent-a"],
+                "available_at": "2026-09-20T10:02:00Z",
+                "evidence_created_at": "2026-09-20T10:01:00Z",
+                "availability": {
+                    "existed": True,
+                    "reachable": True,
+                    "discoverable": True,
+                    "fresh": True,
+                    "accessible": True,
+                    "trusted": True,
+                },
+            },
+        )
+
+
+def test_action_receipt_bridge_keeps_artifact_as_separate_boundary():
+    digest = "sha256:" + "a" * 64
+    event = action_receipt_reference(
+        lifecycle_id="life-1",
+        event_id="receipt-1",
+        actor="gate-a",
+        event_time="2026-09-20T10:05:00Z",
+        recorded_at="2026-09-20T10:05:00Z",
+        receipt_digest=digest,
+        decision="ALLOW",
+    )
+    assert event.phase == "ACTION_RECEIPT"
+    assert event.evidence_refs == (digest,)
+    assert event.payload["artifact_type"] == "ddc-action-receipt"
+
+
+def test_replay_bridge_appends_reconstruction_without_mutating_source():
+    ledger = LifecycleLedger("life-1")
+    source = e(
+        event_id="execution-unknown",
+        phase="EXECUTION",
+        event_time="2026-09-20T10:06:00Z",
+        recorded_at="2026-09-20T10:06:00Z",
+        epistemic_state="UNKNOWN",
+        payload={"status": "UNKNOWN"},
+    )
+    ledger.append(source)
+    report_digest = "sha256:" + "b" * 64
+    replay = replay_reconstruction_reference(
+        lifecycle_id="life-1",
+        event_id="replay-1",
+        actor="agent-replay",
+        event_time="2026-09-20T10:06:00Z",
+        recorded_at="2026-09-20T10:10:00Z",
+        report_digest=report_digest,
+        parent_event_ids=["execution-unknown"],
+        consequence_status="SUCCEEDED",
+        decision_status="JUSTIFIED",
+    )
+    ledger.append(replay)
+    assert ledger.get("execution-unknown").payload["status"] == "UNKNOWN"
+    assert ledger.latest_reconstruction().payload["consequence_status"] == "SUCCEEDED"
+
+
+def test_interop_bridge_rejects_non_digest_reference():
+    with pytest.raises(LifecycleValidationError, match="sha256"):
+        action_receipt_reference(
+            lifecycle_id="life-1",
+            event_id="bad-receipt",
+            actor="gate-a",
+            event_time="2026-09-20T10:05:00Z",
+            recorded_at="2026-09-20T10:05:00Z",
+            receipt_digest="not-a-digest",
+            decision="ALLOW",
+        )
+
+
+def test_jsonl_import_has_byte_limit():
+    with pytest.raises(LifecycleValidationError, match="byte limit"):
+        loads_jsonl(" " * 64, max_bytes=16)
