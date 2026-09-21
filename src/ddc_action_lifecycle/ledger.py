@@ -56,7 +56,15 @@ def _parse_time(value: str) -> datetime:
 def _validate_json(value: Any, path: str = "$", depth: int = 0) -> None:
     if depth > DEFAULT_MAX_DEPTH:
         raise LifecycleValidationError(f"{path}: JSON nesting exceeds limit")
-    if value is None or isinstance(value, (bool, str)):
+    if value is None or isinstance(value, bool):
+        return
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise LifecycleValidationError(
+                f"{path}: unpaired surrogate is not permitted"
+            ) from exc
         return
     if isinstance(value, int) and not isinstance(value, bool):
         if abs(value) > 2**53 - 1:
@@ -184,10 +192,48 @@ def _validate_profile_payload(phase: str, payload: Mapping[str, Any]) -> None:
             raise LifecycleValidationError(
                 "availability missing facets: " + ", ".join(missing_facets)
             )
+        extra_facets = sorted(set(availability) - required_facets)
+        if extra_facets:
+            raise LifecycleValidationError(
+                "availability has unknown facets: " + ", ".join(extra_facets)
+            )
         for facet in required_facets:
             if availability[facet] not in (True, False, None):
                 raise LifecycleValidationError(
                     f"availability.{facet} must be true, false, or null"
+                )
+        independence_group = payload.get("independence_group")
+        if independence_group is not None and (
+            not isinstance(independence_group, str) or not independence_group
+        ):
+            raise LifecycleValidationError(
+                "independence_group must be a non-empty string or null"
+            )
+        causal_origin = payload.get("causal_origin_event_id")
+        if causal_origin is not None and (
+            not isinstance(causal_origin, str) or not causal_origin
+        ):
+            raise LifecycleValidationError(
+                "causal_origin_event_id must be a non-empty string or null"
+            )
+        for field in (
+            "transformation_chain",
+            "source_authority_scope",
+            "contamination_from_event_ids",
+        ):
+            value = payload.get(field, ())
+            if not isinstance(value, (list, tuple)):
+                raise LifecycleValidationError(f"{field} must be an array")
+            if any(not isinstance(item, str) or not item for item in value):
+                raise LifecycleValidationError(
+                    f"{field} must contain non-empty strings"
+                )
+            if (
+                field == "contamination_from_event_ids"
+                and len(value) != len(set(value))
+            ):
+                raise LifecycleValidationError(
+                    "contamination_from_event_ids must not contain duplicates"
                 )
 
     if phase == "DECISION" and payload.get("profile") == "ddc.decision-state.v1":
@@ -559,4 +605,48 @@ class LifecycleLedger:
         items = [event for event in self._events if event.phase == "RECONSTRUCTION"]
         if not items:
             return None
-        return max(items, key=lambda item: _parse_time(item.recorded_at))
+        return max(
+            items,
+            key=lambda item: (_parse_time(item.recorded_at), item.event_id),
+        )
+
+    def checkpoint(self, *, previous_root: str | None = None) -> dict[str, Any]:
+        """Commit to the complete current event set.
+
+        External signing or transparency registration is required to make omission
+        detectable to another party.
+        """
+        entries = [
+            {
+                "recorded_at": event.recorded_at,
+                "event_id": event.event_id,
+                "digest": event.digest,
+            }
+            for event in sorted(
+                self._events,
+                key=lambda item: (_parse_time(item.recorded_at), item.event_id),
+            )
+        ]
+        core = {
+            "profile": "ddc.lifecycle-checkpoint.v1",
+            "lifecycle_id": self.lifecycle_id,
+            "event_count": len(entries),
+            "entries": entries,
+            "previous_root": previous_root,
+        }
+        return {
+            **core,
+            "root": "sha256:" + hashlib.sha256(canonical_bytes(core)).hexdigest(),
+        }
+
+    def verify_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        if not isinstance(checkpoint, dict):
+            raise LifecycleValidationError("checkpoint must be an object")
+        root = checkpoint.get("root")
+        core = {key: value for key, value in checkpoint.items() if key != "root"}
+        expected = "sha256:" + hashlib.sha256(canonical_bytes(core)).hexdigest()
+        if root != expected:
+            raise LifecycleValidationError("checkpoint root mismatch")
+        current = self.checkpoint(previous_root=checkpoint.get("previous_root"))
+        if checkpoint != current:
+            raise LifecycleValidationError("checkpoint does not match lifecycle")
