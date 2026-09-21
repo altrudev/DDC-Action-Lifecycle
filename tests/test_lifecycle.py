@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from ddc_action_lifecycle import (
@@ -646,3 +649,25 @@ def test_contamination_reference_must_exist():
     )
     with pytest.raises(LifecycleValidationError, match="unknown contaminating event"):
         ledger.append(evidence)
+
+
+def test_public_conformance_vector():
+    root = Path(__file__).resolve().parents[1]
+    ledger = loads_jsonl(
+        (root / "conformance" / "valid-profiled-allow-v0.1.jsonl").read_text()
+    )
+    expected = json.loads(
+        (root / "conformance" / "valid-profiled-allow-v0.1.expected.json").read_text()
+    )
+    assessment = assess_decision(ledger, expected["decision_event_id"])
+    transition = next_transition_admissibility(
+        ledger, expected["decision_event_id"]
+    )
+    assert assessment.status == expected["expected_assessment_status"]
+    assert transition["disposition"] == expected["expected_next_transition"]
+    assert list(assessment.independent_source_groups) == expected[
+        "expected_independent_source_groups"
+    ]
+    assert assessment.independence_shortfall == expected[
+        "expected_independence_shortfall"
+    ]
