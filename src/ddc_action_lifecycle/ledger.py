@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
-from typing import Any, Iterable
+from types import MappingProxyType
+from typing import Any, Iterable, Mapping
 
 
 PHASES = {
@@ -56,11 +57,11 @@ def _validate_json(value: Any, path: str = "$") -> None:
         return
     if isinstance(value, float):
         raise LifecycleValidationError(f"{path}: floating point values are not allowed")
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
             _validate_json(item, f"{path}[{index}]")
         return
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         for key, item in value.items():
             if not isinstance(key, str):
                 raise LifecycleValidationError(f"{path}: object keys must be strings")
@@ -69,14 +70,124 @@ def _validate_json(value: Any, path: str = "$") -> None:
     raise LifecycleValidationError(f"{path}: unsupported JSON value {type(value).__name__}")
 
 
+def _freeze_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _thaw_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
+
+
 def canonical_bytes(value: Any) -> bytes:
-    _validate_json(value)
+    materialized = _thaw_json(value)
+    _validate_json(materialized)
     return json.dumps(
-        value,
+        materialized,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode("utf-8")
+
+
+def _strings(name: str, values: Iterable[str]) -> tuple[str, ...]:
+    result = tuple(values)
+    if any(not isinstance(item, str) or not item for item in result):
+        raise LifecycleValidationError(f"{name} must contain non-empty strings")
+    if len(result) != len(set(result)):
+        raise LifecycleValidationError(f"{name} must not contain duplicates")
+    return result
+
+
+def _validate_profile_payload(phase: str, payload: Mapping[str, Any]) -> None:
+    if phase == "EVIDENCE_STATE" and payload.get("profile") == "ddc.evidence-state.v1":
+        required = {
+            "available_to",
+            "available_at",
+            "evidence_created_at",
+            "availability",
+        }
+        missing = sorted(required - set(payload))
+        if missing:
+            raise LifecycleValidationError(
+                "evidence-state profile missing: " + ", ".join(missing)
+            )
+        available_to = payload["available_to"]
+        if not isinstance(available_to, (list, tuple)) or not available_to:
+            raise LifecycleValidationError("available_to must contain at least one actor")
+        if any(not isinstance(actor, str) or not actor for actor in available_to):
+            raise LifecycleValidationError("available_to must contain non-empty actor ids")
+        available_at = _parse_time(payload["available_at"])
+        created_at = _parse_time(payload["evidence_created_at"])
+        if created_at > available_at:
+            raise LifecycleValidationError(
+                "evidence_created_at cannot be after available_at"
+            )
+        availability = payload["availability"]
+        if not isinstance(availability, Mapping):
+            raise LifecycleValidationError("availability must be an object")
+        required_facets = {
+            "existed",
+            "reachable",
+            "discoverable",
+            "fresh",
+            "accessible",
+            "trusted",
+        }
+        missing_facets = sorted(required_facets - set(availability))
+        if missing_facets:
+            raise LifecycleValidationError(
+                "availability missing facets: " + ", ".join(missing_facets)
+            )
+        for facet in required_facets:
+            if availability[facet] not in (True, False, None):
+                raise LifecycleValidationError(
+                    f"availability.{facet} must be true, false, or null"
+                )
+
+    if phase == "DECISION" and payload.get("profile") == "ddc.decision-state.v1":
+        required = {
+            "decision",
+            "required_evidence_event_ids",
+            "consulted_evidence_event_ids",
+            "unresolved_assumptions",
+            "contradictions",
+        }
+        missing = sorted(required - set(payload))
+        if missing:
+            raise LifecycleValidationError(
+                "decision-state profile missing: " + ", ".join(missing)
+            )
+        if payload["decision"] not in {
+            "ALLOW",
+            "BLOCK",
+            "RECHECK",
+            "REQUIRE_HUMAN",
+            "SIMULATE_FIRST",
+            "UNKNOWN",
+        }:
+            raise LifecycleValidationError("unsupported decision-state decision")
+        for field in ("required_evidence_event_ids", "consulted_evidence_event_ids"):
+            value = payload[field]
+            if not isinstance(value, (list, tuple)):
+                raise LifecycleValidationError(f"{field} must be an array")
+            if any(not isinstance(item, str) or not item for item in value):
+                raise LifecycleValidationError(f"{field} must contain event ids")
+            if len(value) != len(set(value)):
+                raise LifecycleValidationError(f"{field} must not contain duplicates")
+        for field in ("unresolved_assumptions", "contradictions"):
+            value = payload[field]
+            if not isinstance(value, (list, tuple)):
+                raise LifecycleValidationError(f"{field} must be an array")
+            if any(not isinstance(item, str) or not item for item in value):
+                raise LifecycleValidationError(f"{field} must contain non-empty strings")
 
 
 @dataclass(frozen=True)
@@ -91,7 +202,7 @@ class LifecycleEvent:
     claim_scope: tuple[str, ...]
     epistemic_state: str
     evidence_refs: tuple[str, ...]
-    payload: dict[str, Any]
+    payload: Mapping[str, Any]
     digest: str
 
     def core(self) -> dict[str, Any]:
@@ -106,7 +217,7 @@ class LifecycleEvent:
             "claim_scope": list(self.claim_scope),
             "epistemic_state": self.epistemic_state,
             "evidence_refs": list(self.evidence_refs),
-            "payload": self.payload,
+            "payload": _thaw_json(self.payload),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -143,21 +254,22 @@ def create_event(
         if not isinstance(value, str) or not value:
             raise LifecycleValidationError(f"{name} must be a non-empty string")
 
-    _parse_time(event_time)
-    _parse_time(recorded_at)
-    if _parse_time(recorded_at) < _parse_time(event_time):
+    event_dt = _parse_time(event_time)
+    recorded_dt = _parse_time(recorded_at)
+    if recorded_dt < event_dt:
         raise LifecycleValidationError("recorded_at cannot precede event_time")
 
-    parents = tuple(parent_event_ids)
-    if len(parents) != len(set(parents)):
-        raise LifecycleValidationError("duplicate parent event id")
+    parents = _strings("parent_event_ids", parent_event_ids)
     if event_id in parents:
         raise LifecycleValidationError("event cannot parent itself")
 
-    scope = tuple(claim_scope)
-    evidence = tuple(evidence_refs)
+    scope = _strings("claim_scope", claim_scope)
+    evidence = _strings("evidence_refs", evidence_refs)
     body = payload or {}
+    if not isinstance(body, dict):
+        raise LifecycleValidationError("payload must be an object")
     _validate_json(body)
+    _validate_profile_payload(phase, body)
 
     core = {
         "lifecycle_id": lifecycle_id,
@@ -183,17 +295,55 @@ def create_event(
         claim_scope=scope,
         epistemic_state=epistemic_state,
         evidence_refs=evidence,
-        payload=body,
+        payload=_freeze_json(body),
         digest=event_digest(core),
     )
 
 
-class LifecycleLedger:
-    """Append-only lifecycle graph.
+def event_from_dict(raw: dict[str, Any]) -> LifecycleEvent:
+    if not isinstance(raw, dict):
+        raise LifecycleValidationError("event must be an object")
+    required = {
+        "lifecycle_id",
+        "event_id",
+        "phase",
+        "actor",
+        "event_time",
+        "recorded_at",
+        "parent_event_ids",
+        "claim_scope",
+        "epistemic_state",
+        "evidence_refs",
+        "payload",
+        "digest",
+    }
+    missing = sorted(required - set(raw))
+    extra = sorted(set(raw) - required)
+    if missing:
+        raise LifecycleValidationError("event missing fields: " + ", ".join(missing))
+    if extra:
+        raise LifecycleValidationError("event has unknown fields: " + ", ".join(extra))
 
-    The ledger never mutates an accepted event. Later evidence and reconstruction
-    are appended as new events that may reference earlier events.
-    """
+    event = create_event(
+        lifecycle_id=raw["lifecycle_id"],
+        event_id=raw["event_id"],
+        phase=raw["phase"],
+        actor=raw["actor"],
+        event_time=raw["event_time"],
+        recorded_at=raw["recorded_at"],
+        parent_event_ids=raw["parent_event_ids"],
+        claim_scope=raw["claim_scope"],
+        epistemic_state=raw["epistemic_state"],
+        evidence_refs=raw["evidence_refs"],
+        payload=raw["payload"],
+    )
+    if raw["digest"] != event.digest:
+        raise LifecycleValidationError("event digest mismatch")
+    return event
+
+
+class LifecycleLedger:
+    """Append-only lifecycle graph with historical evidence horizons."""
 
     def __init__(self, lifecycle_id: str):
         if not lifecycle_id:
@@ -206,6 +356,12 @@ class LifecycleLedger:
     def events(self) -> tuple[LifecycleEvent, ...]:
         return tuple(self._events)
 
+    def get(self, event_id: str) -> LifecycleEvent:
+        try:
+            return self._by_id[event_id]
+        except KeyError as exc:
+            raise LifecycleValidationError(f"unknown event: {event_id}") from exc
+
     def append(self, event: LifecycleEvent) -> None:
         if event.lifecycle_id != self.lifecycle_id:
             raise LifecycleValidationError("event belongs to another lifecycle")
@@ -214,12 +370,18 @@ class LifecycleLedger:
         if event.digest != event_digest(event.core()):
             raise LifecycleValidationError("event digest mismatch")
 
+        child_event_time = _parse_time(event.event_time)
+        child_recorded_at = _parse_time(event.recorded_at)
         for parent_id in event.parent_event_ids:
             parent = self._by_id.get(parent_id)
             if parent is None:
                 raise LifecycleValidationError(f"unknown parent event: {parent_id}")
-            if _parse_time(parent.event_time) > _parse_time(event.event_time):
+            if _parse_time(parent.event_time) > child_event_time:
                 raise LifecycleValidationError("parent event occurs after child event")
+            if _parse_time(parent.recorded_at) > child_recorded_at:
+                raise LifecycleValidationError(
+                    "parent record was not yet recorded when child was recorded"
+                )
 
         self._events.append(event)
         self._by_id[event.event_id] = event
@@ -229,20 +391,21 @@ class LifecycleLedger:
         for event in self._events:
             replay.append(event)
 
-    def evidence_horizon(self, *, actor: str, decision_time: str) -> tuple[LifecycleEvent, ...]:
-        """Evidence legitimately available to an actor by a historical decision time.
-
-        EVIDENCE_STATE payloads may provide available_to and available_at.
-        Later evidence is intentionally excluded even when it describes an earlier event.
-        """
+    def evidence_horizon(
+        self,
+        *,
+        actor: str,
+        decision_time: str,
+    ) -> tuple[LifecycleEvent, ...]:
+        """Evidence legitimately available to an actor by a historical decision time."""
         cutoff = _parse_time(decision_time)
         out: list[LifecycleEvent] = []
         for event in self._events:
             if event.phase != "EVIDENCE_STATE":
                 continue
-            available_to = event.payload.get("available_to", [])
+            available_to = event.payload.get("available_to", ())
             available_at = event.payload.get("available_at")
-            if not isinstance(available_to, list) or actor not in available_to:
+            if not isinstance(available_to, (list, tuple)) or actor not in available_to:
                 continue
             if not isinstance(available_at, str):
                 continue
