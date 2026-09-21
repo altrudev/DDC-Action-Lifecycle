@@ -906,3 +906,52 @@ def test_bundle_is_canonical_across_independent_ingestion_order():
     right.append(second)
     right.append(first)
     assert build_evidence_bundle(left) == build_evidence_bundle(right)
+
+
+def test_newer_channel_state_before_decision_overrides_bound_earlier_health():
+    ledger = LifecycleLedger("life-1")
+    early = _channel_event(
+        event_id="channel-early",
+        state="HEALTHY",
+        recorded_at="2026-09-20T10:00:30Z",
+    )
+    ledger.append(early)
+    ledger.append(_profile_evidence(channel_event_id=early.event_id))
+    ledger.append(_channel_event(
+        event_id="channel-degraded",
+        state="DEGRADED",
+        recorded_at="2026-09-20T10:04:00Z",
+    ))
+    ledger.append(_decision(require_channel_assurance=True))
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.status == "INVALID"
+    assert assessment.evidence_channel_status == "INADEQUATE"
+    assert assessment.channel_event_ids == ("channel-degraded",)
+
+
+def test_relationship_assertion_cannot_predate_its_endpoints():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(e(
+        event_id="left",
+        phase="OBSERVATION",
+        event_time="2026-09-20T10:01:00Z",
+        recorded_at="2026-09-20T10:01:00Z",
+        epistemic_state="OBSERVED",
+    ))
+    ledger.append(e(
+        event_id="right",
+        phase="OBSERVATION",
+        event_time="2026-09-20T10:08:00Z",
+        recorded_at="2026-09-20T10:08:00Z",
+        epistemic_state="OBSERVED",
+    ))
+    with pytest.raises(LifecycleValidationError, match="before both endpoints"):
+        relationship_event(
+            ledger,
+            event_id="too-early",
+            actor="reviewer",
+            relation_type="SUPPORTED_BY",
+            source_event_id="left",
+            target_event_id="right",
+            recorded_at="2026-09-20T10:05:00Z",
+        )
