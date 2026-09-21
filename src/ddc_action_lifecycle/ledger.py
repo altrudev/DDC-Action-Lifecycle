@@ -20,6 +20,7 @@ PHASES = {
     "OBSERVATION",
     "CONSEQUENCE",
     "RECONSTRUCTION",
+    "RELATIONSHIP",
     "ADMISSIBILITY",
 }
 
@@ -270,6 +271,30 @@ def _validate_profile_payload(phase: str, payload: Mapping[str, Any]) -> None:
             raise LifecycleValidationError("provenance_event_ids must contain event ids")
         if len(provenance) != len(set(provenance)):
             raise LifecycleValidationError("provenance_event_ids must not contain duplicates")
+
+    if phase == "RELATIONSHIP" and payload.get("profile") == "ddc.relationship.v1":
+        required = {"relation_type", "source_event_id", "target_event_id"}
+        missing = sorted(required - set(payload))
+        if missing:
+            raise LifecycleValidationError(
+                "relationship profile missing: " + ", ".join(missing)
+            )
+        if payload["relation_type"] not in {
+            "CAUSED_BY",
+            "OBSERVED_BY",
+            "SUPPORTED_BY",
+            "DERIVED_FROM",
+            "CONTAMINATED_BY",
+            "SUPERSEDES",
+            "RECONSTRUCTS",
+            "RECONCILES",
+        }:
+            raise LifecycleValidationError("unsupported relationship type")
+        for field in ("source_event_id", "target_event_id"):
+            if not isinstance(payload[field], str) or not payload[field]:
+                raise LifecycleValidationError(f"{field} must be a non-empty event id")
+        if payload["source_event_id"] == payload["target_event_id"]:
+            raise LifecycleValidationError("relationship endpoints must differ")
 
     if phase == "DECISION" and payload.get("profile") == "ddc.decision-state.v1":
         required = {
@@ -538,6 +563,19 @@ class LifecycleLedger:
 
         child_event_time = _parse_time(event.event_time)
         child_recorded_at = _parse_time(event.recorded_at)
+
+        if event.phase == "RELATIONSHIP" and event.payload.get("profile") == "ddc.relationship.v1":
+            for endpoint_name in ("source_event_id", "target_event_id"):
+                endpoint_id = event.payload[endpoint_name]
+                endpoint = self._by_id.get(endpoint_id)
+                if endpoint is None:
+                    raise LifecycleValidationError(
+                        f"unknown relationship endpoint: {endpoint_id}"
+                    )
+                if _parse_time(endpoint.recorded_at) > child_recorded_at:
+                    raise LifecycleValidationError(
+                        "relationship endpoint was not yet recorded"
+                    )
 
         if event.phase == "EVIDENCE_CHANNEL" and event.payload.get("profile") == "ddc.evidence-channel.v1":
             for provenance_id in event.payload.get("provenance_event_ids", ()):
