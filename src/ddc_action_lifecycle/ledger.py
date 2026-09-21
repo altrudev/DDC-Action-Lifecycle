@@ -157,6 +157,8 @@ def _validate_profile_payload(phase: str, payload: Mapping[str, Any]) -> None:
             raise LifecycleValidationError("available_to must contain at least one actor")
         if any(not isinstance(actor, str) or not actor for actor in available_to):
             raise LifecycleValidationError("available_to must contain non-empty actor ids")
+        if len(available_to) != len(set(available_to)):
+            raise LifecycleValidationError("available_to must not contain duplicates")
         available_at = _parse_time(payload["available_at"])
         created_at = _parse_time(payload["evidence_created_at"])
         if created_at > available_at:
@@ -300,11 +302,28 @@ def create_event(
 
     scope = _strings("claim_scope", claim_scope)
     evidence = _strings("evidence_refs", evidence_refs)
-    body = payload or {}
-    if not isinstance(body, dict):
+    body = dict(payload or {})
+    if not isinstance(payload, (dict, type(None))):
         raise LifecycleValidationError("payload must be an object")
     _validate_json(body)
     _validate_profile_payload(phase, body)
+    if phase == "EVIDENCE_STATE" and body.get("profile") == "ddc.evidence-state.v1":
+        available_dt = _parse_time(body["available_at"])
+        created_dt = _parse_time(body["evidence_created_at"])
+        if available_dt > recorded_dt:
+            raise LifecycleValidationError(
+                "available_at cannot be after recorded_at"
+            )
+        if created_dt > recorded_dt:
+            raise LifecycleValidationError(
+                "evidence_created_at cannot be after recorded_at"
+            )
+        body["available_at"] = available_dt.isoformat(
+            timespec="microseconds"
+        ).replace("+00:00", "Z")
+        body["evidence_created_at"] = created_dt.isoformat(
+            timespec="microseconds"
+        ).replace("+00:00", "Z")
 
     core = {
         "lifecycle_id": lifecycle_id,
@@ -467,7 +486,10 @@ class LifecycleLedger:
                 continue
             if not isinstance(available_at, str):
                 continue
-            if _parse_time(available_at) <= cutoff:
+            if (
+                _parse_time(available_at) <= cutoff
+                and _parse_time(event.recorded_at) <= cutoff
+            ):
                 out.append(event)
         return tuple(out)
 
