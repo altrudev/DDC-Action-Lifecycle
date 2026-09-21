@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError, create_event
+from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError, _parse_time, create_event
 
 
 RELATIONSHIP_PROFILE = "ddc.relationship.v1"
@@ -32,14 +32,18 @@ def relationship_event(
         raise LifecycleValidationError("unsupported relationship type")
     source = ledger.get(source_event_id)
     target = ledger.get(target_event_id)
-    latest_time = max(source.recorded_at, target.recorded_at, recorded_at)
+    relation_time = _parse_time(recorded_at)
+    if relation_time < _parse_time(source.recorded_at) or relation_time < _parse_time(target.recorded_at):
+        raise LifecycleValidationError(
+            "relationship cannot be recorded before both endpoints exist"
+        )
     return create_event(
         lifecycle_id=ledger.lifecycle_id,
         event_id=event_id,
         phase="RELATIONSHIP",
         actor=actor,
-        event_time=latest_time,
-        recorded_at=latest_time,
+        event_time=recorded_at,
+        recorded_at=recorded_at,
         claim_scope=claim_scope,
         epistemic_state="ATTESTED",
         evidence_refs=(source.digest, target.digest),
