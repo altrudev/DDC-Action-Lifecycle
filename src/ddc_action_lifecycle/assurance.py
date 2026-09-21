@@ -17,6 +17,10 @@ class DecisionAssessment:
     missing_required_event_ids: tuple[str, ...]
     unavailable_consulted_event_ids: tuple[str, ...]
     unusable_consulted_event_ids: tuple[str, ...]
+    contaminated_consulted_event_ids: tuple[str, ...]
+    independent_source_groups: tuple[str, ...]
+    minimum_independent_sources: int
+    independence_shortfall: int
     unresolved_assumptions: tuple[str, ...]
     contradictions: tuple[str, ...]
     reasons: tuple[str, ...]
@@ -32,6 +36,10 @@ class DecisionAssessment:
             "missing_required_event_ids": list(self.missing_required_event_ids),
             "unavailable_consulted_event_ids": list(self.unavailable_consulted_event_ids),
             "unusable_consulted_event_ids": list(self.unusable_consulted_event_ids),
+            "contaminated_consulted_event_ids": list(self.contaminated_consulted_event_ids),
+            "independent_source_groups": list(self.independent_source_groups),
+            "minimum_independent_sources": self.minimum_independent_sources,
+            "independence_shortfall": self.independence_shortfall,
             "unresolved_assumptions": list(self.unresolved_assumptions),
             "contradictions": list(self.contradictions),
             "reasons": list(self.reasons),
@@ -91,12 +99,23 @@ def assess_decision(
     )
 
     unusable: list[str] = []
+    contaminated: list[str] = []
+    independence_groups: set[str] = set()
     for event_id in consulted:
         if event_id not in horizon_set:
             continue
         evidence = ledger.get(event_id)
         if not _is_usable_evidence(evidence):
             unusable.append(event_id)
+        contamination = evidence.payload.get("contamination_from_event_ids", ())
+        if isinstance(contamination, (list, tuple)) and contamination:
+            contaminated.append(event_id)
+        group = evidence.payload.get("independence_group")
+        if isinstance(group, str) and group:
+            independence_groups.add(group)
+
+    minimum_independent = event.payload.get("minimum_independent_sources", 0)
+    independence_shortfall = max(0, minimum_independent - len(independence_groups))
 
     reasons: list[str] = []
     if missing_required:
@@ -105,12 +124,16 @@ def assess_decision(
         reasons.append("consulted evidence was outside the actor's historical horizon")
     if unusable:
         reasons.append("consulted evidence was not fully usable at decision time")
+    if contaminated:
+        reasons.append("consulted evidence carries post-action contamination")
+    if independence_shortfall:
+        reasons.append("independent evidence source requirement was not met")
     if contradictions:
         reasons.append("decision state contains unresolved contradictions")
     if assumptions:
         reasons.append("decision state contains unresolved assumptions")
 
-    hard_invalid = bool(unavailable_consulted or unusable)
+    hard_invalid = bool(unavailable_consulted or unusable or contaminated)
     if hard_invalid:
         status = "INVALID"
     elif decision == "ALLOW":
@@ -130,6 +153,10 @@ def assess_decision(
         missing_required_event_ids=missing_required,
         unavailable_consulted_event_ids=unavailable_consulted,
         unusable_consulted_event_ids=tuple(unusable),
+        contaminated_consulted_event_ids=tuple(contaminated),
+        independent_source_groups=tuple(sorted(independence_groups)),
+        minimum_independent_sources=minimum_independent,
+        independence_shortfall=independence_shortfall,
         unresolved_assumptions=assumptions,
         contradictions=contradictions,
         reasons=tuple(reasons),
