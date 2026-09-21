@@ -280,6 +280,9 @@ def next_transition_admissibility(
         "decision_event_id": assessment.event_id,
         "disposition": disposition,
         "assessment_status": assessment.status,
+        "evidence_channel_status": assessment.evidence_channel_status,
+        "decision_reasons": list(assessment.decision_reasons),
+        "channel_reasons": list(assessment.channel_reasons),
         "reasons": list(assessment.reasons),
     }
 
@@ -313,6 +316,9 @@ def admissibility_event(
             "decision_event_digest": decision_event.digest,
             "disposition": transition["disposition"],
             "assessment_status": assessment.status,
+            "evidence_channel_status": assessment.evidence_channel_status,
+            "decision_reasons": list(assessment.decision_reasons),
+            "channel_reasons": list(assessment.channel_reasons),
             "reasons": list(assessment.reasons),
             "historical_horizon_event_ids": list(assessment.horizon_event_ids),
         },
