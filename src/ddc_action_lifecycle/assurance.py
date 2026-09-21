@@ -110,7 +110,10 @@ def assess_decision(
     if assumptions:
         reasons.append("decision state contains unresolved assumptions")
 
-    if decision == "ALLOW":
+    hard_invalid = bool(unavailable_consulted or unusable)
+    if hard_invalid:
+        status = "INVALID"
+    elif decision == "ALLOW":
         status = "INVALID" if reasons else "VALID"
     elif decision in {"BLOCK", "RECHECK", "REQUIRE_HUMAN", "SIMULATE_FIRST"}:
         status = "VALID"
