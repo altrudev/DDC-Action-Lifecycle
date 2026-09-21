@@ -34,6 +34,7 @@ EPISTEMIC_STATES = {
 DEFAULT_MAX_EVENTS = 100_000
 DEFAULT_MAX_PARENTS = 64
 DEFAULT_MAX_EVENT_BYTES = 1 * 1024 * 1024
+DEFAULT_MAX_DEPTH = 128
 
 
 class LifecycleValidationError(ValueError):
@@ -52,7 +53,9 @@ def _parse_time(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _validate_json(value: Any, path: str = "$") -> None:
+def _validate_json(value: Any, path: str = "$", depth: int = 0) -> None:
+    if depth > DEFAULT_MAX_DEPTH:
+        raise LifecycleValidationError(f"{path}: JSON nesting exceeds limit")
     if value is None or isinstance(value, (bool, str)):
         return
     if isinstance(value, int) and not isinstance(value, bool):
@@ -63,13 +66,13 @@ def _validate_json(value: Any, path: str = "$") -> None:
         raise LifecycleValidationError(f"{path}: floating point values are not allowed")
     if isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
-            _validate_json(item, f"{path}[{index}]")
+            _validate_json(item, f"{path}[{index}]", depth + 1)
         return
     if isinstance(value, Mapping):
         for key, item in value.items():
             if not isinstance(key, str):
                 raise LifecycleValidationError(f"{path}: object keys must be strings")
-            _validate_json(item, f"{path}.{key}")
+            _validate_json(item, f"{path}.{key}", depth + 1)
         return
     raise LifecycleValidationError(f"{path}: unsupported JSON value {type(value).__name__}")
 
@@ -125,8 +128,8 @@ def _encode_canonical(value: Any) -> str:
 
 
 def canonical_bytes(value: Any) -> bytes:
+    _validate_json(value)
     materialized = _thaw_json(value)
-    _validate_json(materialized)
     return _encode_canonical(materialized).encode("utf-8")
 
 
@@ -302,9 +305,9 @@ def create_event(
 
     scope = _strings("claim_scope", claim_scope)
     evidence = _strings("evidence_refs", evidence_refs)
-    body = dict(payload or {})
     if not isinstance(payload, (dict, type(None))):
         raise LifecycleValidationError("payload must be an object")
+    body = dict(payload or {})
     _validate_json(body)
     _validate_profile_payload(phase, body)
     if phase == "EVIDENCE_STATE" and body.get("profile") == "ddc.evidence-state.v1":
