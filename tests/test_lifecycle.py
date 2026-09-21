@@ -6,6 +6,8 @@ import pytest
 from ddc_action_lifecycle import (
     LifecycleLedger,
     LifecycleValidationError,
+    assess_channel_event,
+    channel_state_at,
     assess_decision,
     create_event,
     dumps_jsonl,
@@ -15,6 +17,7 @@ from ddc_action_lifecycle import (
     admissibility_event,
     build_evidence_bundle,
     replay_reconstruction_reference,
+    relationship_event,
     verify_evidence_bundle,
 )
 from ddc_action_lifecycle.ledger import canonical_bytes
@@ -195,6 +198,7 @@ def _profile_evidence(
     availability=None,
     independence_group=None,
     contamination=(),
+    channel_event_id=None,
 ):
     return e(
         event_id=event_id,
@@ -218,12 +222,14 @@ def _profile_evidence(
             },
             "independence_group": independence_group,
             "contamination_from_event_ids": list(contamination),
+            **({"channel_event_id": channel_event_id} if channel_event_id else {}),
         },
     )
 
 
 def _decision(*, required=("ev-1",), consulted=("ev-1",), decision="ALLOW",
-              assumptions=(), contradictions=(), minimum_independent_sources=0):
+              assumptions=(), contradictions=(), minimum_independent_sources=0,
+              require_channel_assurance=False):
     return e(
         event_id="decision-1",
         phase="DECISION",
@@ -238,6 +244,7 @@ def _decision(*, required=("ev-1",), consulted=("ev-1",), decision="ALLOW",
             "unresolved_assumptions": list(assumptions),
             "contradictions": list(contradictions),
             "minimum_independent_sources": minimum_independent_sources,
+            "require_channel_assurance": require_channel_assurance,
         },
     )
 
@@ -753,3 +760,149 @@ def test_evidence_bundle_detects_lifecycle_change():
     ))
     with pytest.raises(LifecycleValidationError, match="does not match lifecycle"):
         verify_evidence_bundle(ledger, bundle)
+
+
+def _channel_event(*, event_id="channel-1", state="HEALTHY",
+                   recorded_at="2026-09-20T10:00:30Z",
+                   visible_to=("agent-a",), latency=100, max_latency=1000):
+    return e(
+        event_id=event_id,
+        phase="EVIDENCE_CHANNEL",
+        actor="provider-channel",
+        event_time=recorded_at,
+        recorded_at=recorded_at,
+        epistemic_state="OBSERVED",
+        payload={
+            "profile": "ddc.evidence-channel.v1",
+            "channel_id": "provider-status",
+            "state": state,
+            "visible_to": list(visible_to),
+            "delivery_latency_ms": latency,
+            "max_delivery_latency_ms": max_latency,
+            "provenance_event_ids": [],
+        },
+    )
+
+
+def test_healthy_evidence_channel_can_support_profiled_allow():
+    ledger = LifecycleLedger("life-1")
+    channel = _channel_event()
+    ledger.append(channel)
+    ledger.append(_profile_evidence(channel_event_id=channel.event_id))
+    ledger.append(_decision(require_channel_assurance=True))
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.status == "VALID"
+    assert assessment.evidence_channel_status == "ADEQUATE"
+    assert assessment.channel_event_ids == ("channel-1",)
+
+
+def test_degraded_evidence_channel_is_separate_failure_dimension():
+    ledger = LifecycleLedger("life-1")
+    channel = _channel_event(state="DEGRADED")
+    ledger.append(channel)
+    ledger.append(_profile_evidence(channel_event_id=channel.event_id))
+    ledger.append(_decision(require_channel_assurance=True))
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.status == "INVALID"
+    assert assessment.evidence_channel_status == "INADEQUATE"
+    assert assessment.inadequate_channel_event_ids == ("channel-1",)
+    assert "evidence channel was inadequate at decision time" in assessment.reasons
+
+
+def test_required_channel_assurance_fails_closed_when_missing():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_profile_evidence())
+    ledger.append(_decision(require_channel_assurance=True))
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.status == "INVALID"
+    assert assessment.evidence_channel_status == "UNKNOWN"
+    assert assessment.missing_channel_assurance_event_ids == ("ev-1",)
+
+
+def test_channel_state_at_preserves_historical_actor_view():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_channel_event(
+        event_id="channel-early",
+        state="HEALTHY",
+        recorded_at="2026-09-20T10:01:00Z",
+    ))
+    ledger.append(_channel_event(
+        event_id="channel-late",
+        state="DEGRADED",
+        recorded_at="2026-09-20T10:08:00Z",
+    ))
+    historical = channel_state_at(
+        ledger,
+        channel_id="provider-status",
+        actor="agent-a",
+        decision_time="2026-09-20T10:05:00Z",
+    )
+    assert historical is not None
+    assert historical.channel_event_id == "channel-early"
+    assert historical.status == "ADEQUATE"
+
+
+def test_channel_latency_policy_can_make_healthy_transport_inadequate():
+    event = _channel_event(latency=1500, max_latency=1000)
+    assessment = assess_channel_event(event)
+    assert assessment.status == "INADEQUATE"
+    assert "latency" in assessment.reasons[0]
+
+
+def test_typed_relationship_does_not_claim_causality_from_chronology():
+    ledger = LifecycleLedger("life-1")
+    attempt = e(
+        event_id="attempt-a",
+        phase="EXECUTION",
+        event_time="2026-09-20T10:01:00Z",
+        recorded_at="2026-09-20T10:01:00Z",
+        epistemic_state="OBSERVED",
+    )
+    later = e(
+        event_id="later-record",
+        phase="OBSERVATION",
+        event_time="2026-09-20T10:08:00Z",
+        recorded_at="2026-09-20T10:08:00Z",
+        epistemic_state="ATTESTED",
+    )
+    ledger.append(attempt)
+    ledger.append(later)
+    relation = relationship_event(
+        ledger,
+        event_id="rel-1",
+        actor="agent-replay",
+        relation_type="SUPPORTED_BY",
+        source_event_id="attempt-a",
+        target_event_id="later-record",
+        recorded_at="2026-09-20T10:09:00Z",
+        claim_scope=("attempt reconstruction support",),
+    )
+    ledger.append(relation)
+    assert relation.parent_event_ids == ()
+    assert relation.payload["relation_type"] == "SUPPORTED_BY"
+    assert relation.payload["source_event_id"] == "attempt-a"
+    assert relation.payload["target_event_id"] == "later-record"
+
+
+def test_bundle_is_canonical_across_independent_ingestion_order():
+    first = e(
+        event_id="a",
+        phase="OBSERVATION",
+        event_time="2026-09-20T10:00:00Z",
+        recorded_at="2026-09-20T10:00:00Z",
+        epistemic_state="OBSERVED",
+    )
+    second = e(
+        event_id="b",
+        phase="OBSERVATION",
+        event_time="2026-09-20T10:00:00Z",
+        recorded_at="2026-09-20T10:00:00Z",
+        epistemic_state="OBSERVED",
+    )
+    left = LifecycleLedger("life-1")
+    left.append(first)
+    left.append(second)
+    right = LifecycleLedger("life-1")
+    right.append(second)
+    right.append(first)
+    assert build_evidence_bundle(left) == build_evidence_bundle(right)
