@@ -12,6 +12,7 @@ from ddc_action_lifecycle import (
     loads_jsonl,
     next_transition_admissibility,
     action_receipt_reference,
+    admissibility_event,
     replay_reconstruction_reference,
 )
 from ddc_action_lifecycle.ledger import canonical_bytes
@@ -671,3 +672,53 @@ def test_public_conformance_vector():
     assert assessment.independence_shortfall == expected[
         "expected_independence_shortfall"
     ]
+
+
+def test_admissibility_event_closes_decision_to_execution_loop():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_profile_evidence())
+    ledger.append(_decision())
+    gate = admissibility_event(
+        ledger,
+        "decision-1",
+        event_id="admissibility-1",
+        actor="physical-gate",
+        recorded_at="2026-09-20T10:05:01Z",
+    )
+    ledger.append(gate)
+    assert gate.phase == "ADMISSIBILITY"
+    assert gate.payload["disposition"] == "ALLOW"
+    assert gate.payload["decision_event_id"] == "decision-1"
+    assert gate.evidence_refs == (ledger.get("decision-1").digest,)
+
+
+def test_checkpoint_binds_complete_event_set():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_profile_evidence())
+    checkpoint = ledger.checkpoint()
+    ledger.verify_checkpoint(checkpoint)
+
+    ledger.append(_decision())
+    with pytest.raises(LifecycleValidationError, match="does not match lifecycle"):
+        ledger.verify_checkpoint(checkpoint)
+
+
+def test_checkpoint_detects_root_tampering():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_profile_evidence())
+    checkpoint = ledger.checkpoint()
+    checkpoint["root"] = "sha256:" + "0" * 64
+    with pytest.raises(LifecycleValidationError, match="root mismatch"):
+        ledger.verify_checkpoint(checkpoint)
+
+
+def test_jsonl_rejects_duplicate_keys():
+    raw = '{"lifecycle_id":"a","lifecycle_id":"b"}\n'
+    with pytest.raises(LifecycleValidationError, match="duplicate JSON key"):
+        loads_jsonl(raw)
+
+
+def test_jsonl_rejects_nonfinite_constants():
+    raw = '{"x":NaN}\n'
+    with pytest.raises(LifecycleValidationError, match="non-finite"):
+        loads_jsonl(raw)
