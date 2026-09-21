@@ -31,6 +31,10 @@ EPISTEMIC_STATES = {
     "UNKNOWN",
 }
 
+DEFAULT_MAX_EVENTS = 100_000
+DEFAULT_MAX_PARENTS = 64
+DEFAULT_MAX_EVENT_BYTES = 1 * 1024 * 1024
+
 
 class LifecycleValidationError(ValueError):
     pass
@@ -86,15 +90,44 @@ def _thaw_json(value: Any) -> Any:
     return value
 
 
+def _utf16_sort_key(value: str) -> bytes:
+    try:
+        return value.encode("utf-16-be")
+    except UnicodeEncodeError as exc:
+        raise LifecycleValidationError("unpaired surrogate in object key") from exc
+
+
+def _encode_canonical(value: Any) -> str:
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, str):
+        try:
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        except UnicodeEncodeError as exc:
+            raise LifecycleValidationError("unpaired surrogate in string") from exc
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ",".join(_encode_canonical(item) for item in value) + "]"
+    if isinstance(value, dict):
+        keys = sorted(value, key=_utf16_sort_key)
+        return "{" + ",".join(
+            _encode_canonical(key) + ":" + _encode_canonical(value[key])
+            for key in keys
+        ) + "}"
+    raise LifecycleValidationError(
+        f"unsupported canonical value {type(value).__name__}"
+    )
+
+
 def canonical_bytes(value: Any) -> bytes:
     materialized = _thaw_json(value)
     _validate_json(materialized)
-    return json.dumps(
-        materialized,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
+    return _encode_canonical(materialized).encode("utf-8")
 
 
 def _strings(name: str, values: Iterable[str]) -> tuple[str, ...]:
@@ -258,6 +291,8 @@ def create_event(
     recorded_dt = _parse_time(recorded_at)
     if recorded_dt < event_dt:
         raise LifecycleValidationError("recorded_at cannot precede event_time")
+    event_time = event_dt.isoformat(timespec="microseconds").replace("+00:00", "Z")
+    recorded_at = recorded_dt.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
     parents = _strings("parent_event_ids", parent_event_ids)
     if event_id in parents:
@@ -345,10 +380,22 @@ def event_from_dict(raw: dict[str, Any]) -> LifecycleEvent:
 class LifecycleLedger:
     """Append-only lifecycle graph with historical evidence horizons."""
 
-    def __init__(self, lifecycle_id: str):
+    def __init__(
+        self,
+        lifecycle_id: str,
+        *,
+        max_events: int = DEFAULT_MAX_EVENTS,
+        max_parents: int = DEFAULT_MAX_PARENTS,
+        max_event_bytes: int = DEFAULT_MAX_EVENT_BYTES,
+    ):
         if not lifecycle_id:
             raise LifecycleValidationError("lifecycle_id is required")
+        if max_events < 1 or max_parents < 1 or max_event_bytes < 1:
+            raise LifecycleValidationError("ledger limits must be positive")
         self.lifecycle_id = lifecycle_id
+        self.max_events = max_events
+        self.max_parents = max_parents
+        self.max_event_bytes = max_event_bytes
         self._events: list[LifecycleEvent] = []
         self._by_id: dict[str, LifecycleEvent] = {}
 
@@ -363,6 +410,12 @@ class LifecycleLedger:
             raise LifecycleValidationError(f"unknown event: {event_id}") from exc
 
     def append(self, event: LifecycleEvent) -> None:
+        if len(self._events) >= self.max_events:
+            raise LifecycleValidationError("lifecycle event limit exceeded")
+        if len(event.parent_event_ids) > self.max_parents:
+            raise LifecycleValidationError("parent event limit exceeded")
+        if len(canonical_bytes(event.to_dict())) > self.max_event_bytes:
+            raise LifecycleValidationError("event byte limit exceeded")
         if event.lifecycle_id != self.lifecycle_id:
             raise LifecycleValidationError("event belongs to another lifecycle")
         if event.event_id in self._by_id:
@@ -387,7 +440,12 @@ class LifecycleLedger:
         self._by_id[event.event_id] = event
 
     def verify(self) -> None:
-        replay = LifecycleLedger(self.lifecycle_id)
+        replay = LifecycleLedger(
+            self.lifecycle_id,
+            max_events=self.max_events,
+            max_parents=self.max_parents,
+            max_event_bytes=self.max_event_bytes,
+        )
         for event in self._events:
             replay.append(event)
 
