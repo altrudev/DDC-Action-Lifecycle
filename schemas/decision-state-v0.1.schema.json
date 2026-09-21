@@ -44,6 +44,11 @@
     },
     "policy_ref": {"type": ["string", "null"]},
     "authority_ref": {"type": ["string", "null"]},
-    "branch_id": {"type": ["string", "null"]}
+    "branch_id": {"type": ["string", "null"]},
+    "minimum_independent_sources": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    }
   }
 }
