@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://altru.dev/ddc/schemas/evidence-state-v0.1.schema.json",
+  "title": "DDC Action Lifecycle Evidence State v0.1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "profile",
+    "available_to",
+    "available_at",
+    "evidence_created_at",
+    "availability"
+  ],
+  "properties": {
+    "profile": {"const": "ddc.evidence-state.v1"},
+    "available_to": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "available_at": {"type": "string", "format": "date-time"},
+    "evidence_created_at": {"type": "string", "format": "date-time"},
+    "source_id": {"type": "string"},
+    "channel_event_id": {"type": ["string", "null"], "minLength": 1},
+    "source_authority_scope": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "independence_group": {"type": ["string", "null"]},
+    "causal_origin_event_id": {"type": ["string", "null"]},
+    "transformation_chain": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "contamination_from_event_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "existed",
+        "reachable",
+        "discoverable",
+        "fresh",
+        "accessible",
+        "trusted"
+      ],
+      "properties": {
+        "existed": {"type": ["boolean", "null"]},
+        "reachable": {"type": ["boolean", "null"]},
+        "discoverable": {"type": ["boolean", "null"]},
+        "fresh": {"type": ["boolean", "null"]},
+        "accessible": {"type": ["boolean", "null"]},
+        "trusted": {"type": ["boolean", "null"]}
+      }
+    }
+  }
+}

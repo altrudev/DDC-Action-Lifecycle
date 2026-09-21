@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://altru.dev/ddc/schemas/decision-state-v0.1.schema.json",
+  "title": "DDC Action Lifecycle Decision State v0.1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "profile",
+    "decision",
+    "required_evidence_event_ids",
+    "consulted_evidence_event_ids",
+    "unresolved_assumptions",
+    "contradictions"
+  ],
+  "properties": {
+    "profile": {"const": "ddc.decision-state.v1"},
+    "decision": {
+      "enum": [
+        "ALLOW",
+        "BLOCK",
+        "RECHECK",
+        "REQUIRE_HUMAN",
+        "SIMULATE_FIRST",
+        "UNKNOWN"
+      ]
+    },
+    "required_evidence_event_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "consulted_evidence_event_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "unresolved_assumptions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "policy_ref": {"type": ["string", "null"]},
+    "authority_ref": {"type": ["string", "null"]},
+    "branch_id": {"type": ["string", "null"]},
+    "require_channel_assurance": {"type": "boolean"},
+    "minimum_independent_sources": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://altru.dev/ddc/schemas/admissibility-v0.1.schema.json",
+  "title": "DDC Action Lifecycle Admissibility v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "decision_event_id",
+    "decision_event_digest",
+    "disposition",
+    "assessment_status",
+    "reasons",
+    "historical_horizon_event_ids"
+  ],
+  "properties": {
+    "profile": {"const": "ddc.admissibility.v1"},
+    "decision_event_id": {"type": "string", "minLength": 1},
+    "decision_event_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "disposition": {
+      "enum": [
+        "ALLOW",
+        "BLOCK",
+        "RECHECK",
+        "REQUIRE_HUMAN",
+        "SIMULATE_FIRST",
+        "UNKNOWN"
+      ]
+    },
+    "assessment_status": {
+      "enum": ["VALID", "INVALID", "INCOMPLETE"]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "historical_horizon_event_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

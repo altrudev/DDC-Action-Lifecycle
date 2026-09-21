@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://altru.dev/ddc/schemas/relationship-v0.1.schema.json",
+  "title": "DDC Action Lifecycle Relationship v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "relation_type", "source_event_id", "target_event_id"],
+  "properties": {
+    "profile": {"const": "ddc.relationship.v1"},
+    "relation_type": {
+      "enum": [
+        "CAUSED_BY",
+        "OBSERVED_BY",
+        "SUPPORTED_BY",
+        "DERIVED_FROM",
+        "CONTAMINATED_BY",
+        "SUPERSEDES",
+        "RECONSTRUCTS",
+        "RECONCILES"
+      ]
+    },
+    "source_event_id": {"type": "string", "minLength": 1},
+    "target_event_id": {"type": "string", "minLength": 1}
+  }
+}
