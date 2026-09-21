@@ -5,6 +5,7 @@ from .assurance import (
     assess_decision,
     next_transition_admissibility,
 )
+from .interop import action_receipt_reference, replay_reconstruction_reference
 from .io import dumps_jsonl, load_jsonl, loads_jsonl, save_jsonl
 from .ledger import (
     LifecycleEvent,
@@ -20,6 +21,7 @@ __all__ = [
     "LifecycleEvent",
     "LifecycleLedger",
     "LifecycleValidationError",
+    "action_receipt_reference",
     "assess_decision",
     "create_event",
     "dumps_jsonl",
@@ -28,6 +30,7 @@ __all__ = [
     "load_jsonl",
     "loads_jsonl",
     "next_transition_admissibility",
+    "replay_reconstruction_reference",
     "save_jsonl",
 ]
 
