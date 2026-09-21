@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://altru.dev/ddc/schemas/action-lifecycle-event-v0.1.schema.json",
+  "title": "DDC Action Lifecycle Event v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lifecycle_id",
+    "event_id",
+    "phase",
+    "actor",
+    "event_time",
+    "recorded_at",
+    "parent_event_ids",
+    "claim_scope",
+    "epistemic_state",
+    "evidence_refs",
+    "payload",
+    "digest"
+  ],
+  "properties": {
+    "lifecycle_id": {"type": "string", "minLength": 1},
+    "event_id": {"type": "string", "minLength": 1},
+    "phase": {
+      "enum": [
+        "INTENT",
+        "AUTHORITY",
+        "EVIDENCE_STATE",
+        "DECISION",
+        "ACTION_RECEIPT",
+        "DISPATCH",
+        "EXECUTION",
+        "OBSERVATION",
+        "CONSEQUENCE",
+        "RECONSTRUCTION",
+        "ADMISSIBILITY"
+      ]
+    },
+    "actor": {"type": "string", "minLength": 1},
+    "event_time": {"type": "string", "format": "date-time"},
+    "recorded_at": {"type": "string", "format": "date-time"},
+    "parent_event_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "claim_scope": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "epistemic_state": {
+      "enum": ["OBSERVED", "ATTESTED", "INFERRED", "UNPROVEN", "ADJUDICATED", "UNKNOWN"]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "payload": {"type": "object"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}
