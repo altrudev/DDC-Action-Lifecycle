@@ -8,9 +8,12 @@ version = "0.1.0"
 description = "Append-only evidence lifecycle for consequential agent actions"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Apache-2.0"}
+license = {text = "Proprietary runtime; see LICENSE-POLICY.md"}
 authors = [{name = "Valentyn Rukhaylo"}]
 dependencies = []
+
+[project.scripts]
+ddc-lifecycle = "ddc_action_lifecycle.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
