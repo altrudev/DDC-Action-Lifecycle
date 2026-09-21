@@ -89,6 +89,7 @@ Validate an exported lifecycle:
 ddc-lifecycle validate lifecycle.jsonl
 ddc-lifecycle summary lifecycle.jsonl
 ddc-lifecycle assess-decision lifecycle.jsonl decision-1
+ddc-lifecycle bundle lifecycle.jsonl
 ```
 
 ## Public interoperability
@@ -110,6 +111,18 @@ A lifecycle digest proves integrity of the committed event bytes. It does **not*
 Each of those claims must earn its own evidence.
 
 See `SECURITY.md`, `docs/ARCHITECTURE.md`, and `docs/RADIAL-REVIEW-v0.1.md`.
+
+## Commercial product path
+
+The repository now defines three commercial surfaces:
+
+- **DDC Action Lifecycle Runtime** — continuous evidence-bound action assurance;
+- **DDC Evidence Review** — incident/review product producing portable evidence bundles;
+- **DDC Action Gateway** — enforcement immediately before consequential tool execution.
+
+See `docs/PRODUCT.md`, `docs/COMMERCIALIZATION.md`, `docs/DEPLOYMENT.md`, and `docs/PILOT.md`.
+
+The runtime can export a deterministic evidence bundle containing the lifecycle checkpoint, decision assessments, next-transition dispositions, branches, latest reconstruction, limitations, and a bundle digest.
 
 ## Status
 
