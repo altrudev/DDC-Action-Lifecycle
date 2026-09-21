@@ -1,6 +1,7 @@
 """DDC Action Lifecycle reference implementation."""
 
 from .bundle import build_evidence_bundle, verify_evidence_bundle
+from .channel import ChannelAssessment, assess_channel_event, channel_state_at
 from .assurance import (
     DecisionAssessment,
     admissibility_event,
@@ -19,7 +20,10 @@ from .ledger import (
 )
 
 __all__ = [
+    "ChannelAssessment",
     "DecisionAssessment",
+    "assess_channel_event",
+    "channel_state_at",
     "build_evidence_bundle",
     "admissibility_event",
     "LifecycleEvent",
