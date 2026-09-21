@@ -226,6 +226,16 @@ def _validate_profile_payload(phase: str, payload: Mapping[str, Any]) -> None:
                 raise LifecycleValidationError(f"{field} must be an array")
             if any(not isinstance(item, str) or not item for item in value):
                 raise LifecycleValidationError(f"{field} must contain non-empty strings")
+        minimum_independent = payload.get("minimum_independent_sources", 0)
+        if (
+            not isinstance(minimum_independent, int)
+            or isinstance(minimum_independent, bool)
+            or minimum_independent < 0
+            or minimum_independent > 64
+        ):
+            raise LifecycleValidationError(
+                "minimum_independent_sources must be an integer from 0 to 64"
+            )
 
 
 @dataclass(frozen=True)
@@ -447,6 +457,46 @@ class LifecycleLedger:
 
         child_event_time = _parse_time(event.event_time)
         child_recorded_at = _parse_time(event.recorded_at)
+
+        if event.phase == "EVIDENCE_STATE" and event.payload.get("profile") == "ddc.evidence-state.v1":
+            causal_origin = event.payload.get("causal_origin_event_id")
+            if causal_origin is not None:
+                if not isinstance(causal_origin, str) or not causal_origin:
+                    raise LifecycleValidationError("causal_origin_event_id must be an event id or null")
+                origin = self._by_id.get(causal_origin)
+                if origin is None:
+                    raise LifecycleValidationError(
+                        f"unknown causal origin event: {causal_origin}"
+                    )
+                if _parse_time(origin.recorded_at) > child_recorded_at:
+                    raise LifecycleValidationError(
+                        "causal origin was not yet recorded"
+                    )
+
+            contamination = event.payload.get("contamination_from_event_ids", ())
+            if not isinstance(contamination, (list, tuple)):
+                raise LifecycleValidationError(
+                    "contamination_from_event_ids must be an array"
+                )
+            if len(contamination) != len(set(contamination)):
+                raise LifecycleValidationError(
+                    "contamination_from_event_ids must not contain duplicates"
+                )
+            for contaminating_id in contamination:
+                if not isinstance(contaminating_id, str) or not contaminating_id:
+                    raise LifecycleValidationError(
+                        "contamination_from_event_ids must contain event ids"
+                    )
+                contaminating = self._by_id.get(contaminating_id)
+                if contaminating is None:
+                    raise LifecycleValidationError(
+                        f"unknown contaminating event: {contaminating_id}"
+                    )
+                if _parse_time(contaminating.recorded_at) > child_recorded_at:
+                    raise LifecycleValidationError(
+                        "contaminating event was not yet recorded"
+                    )
+
         for parent_id in event.parent_event_ids:
             parent = self._by_id.get(parent_id)
             if parent is None:
