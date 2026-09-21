@@ -955,3 +955,21 @@ def test_relationship_assertion_cannot_predate_its_endpoints():
             target_event_id="right",
             recorded_at="2026-09-20T10:05:00Z",
         )
+
+
+def test_channel_failure_does_not_become_decision_failure_unless_policy_requires_it():
+    ledger = LifecycleLedger("life-1")
+    channel = _channel_event(state="DEGRADED")
+    ledger.append(channel)
+    ledger.append(_profile_evidence(channel_event_id=channel.event_id))
+    ledger.append(_decision(require_channel_assurance=False))
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.status == "VALID"
+    assert assessment.evidence_channel_status == "INADEQUATE"
+    assert assessment.decision_reasons == ()
+    assert assessment.channel_reasons == (
+        "evidence channel was inadequate at decision time",
+    )
+    transition = next_transition_admissibility(ledger, "decision-1")
+    assert transition["disposition"] == "ALLOW"
+    assert transition["evidence_channel_status"] == "INADEQUATE"
