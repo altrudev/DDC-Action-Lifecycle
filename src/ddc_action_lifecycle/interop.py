@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from .ledger import LifecycleEvent, create_event
+from .ledger import LifecycleEvent, LifecycleValidationError, create_event
+
+
+def _require_sha256(value: str, name: str) -> None:
+    if (
+        not isinstance(value, str)
+        or not value.startswith("sha256:")
+        or len(value) != 71
+        or any(ch not in "0123456789abcdef" for ch in value[7:])
+    ):
+        raise LifecycleValidationError(f"{name} must be a sha256 digest")
 
 
 def action_receipt_reference(
@@ -17,6 +27,9 @@ def action_receipt_reference(
     parent_event_ids: Iterable[str] = (),
     branch_id: str | None = None,
 ) -> LifecycleEvent:
+    _require_sha256(receipt_digest, "receipt_digest")
+    if decision not in {"ALLOW", "BLOCK", "HUMAN-REVIEW", "RECHECK", "REQUIRE_HUMAN", "SIMULATE_FIRST", "UNKNOWN"}:
+        raise LifecycleValidationError("unsupported Action Receipt decision")
     payload = {
         "artifact_type": "ddc-action-receipt",
         "receipt_digest": receipt_digest,
@@ -52,6 +65,7 @@ def replay_reconstruction_reference(
     decision_status: str = "UNKNOWN",
     as_of: str | None = None,
 ) -> LifecycleEvent:
+    _require_sha256(report_digest, "report_digest")
     return create_event(
         lifecycle_id=lifecycle_id,
         event_id=event_id,
