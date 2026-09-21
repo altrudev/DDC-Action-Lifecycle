@@ -17,8 +17,13 @@ def build_evidence_bundle(ledger: LifecycleLedger) -> dict[str, Any]:
     """
     ledger.verify()
 
+    canonical_events = sorted(
+        ledger.events,
+        key=lambda event: (event.recorded_at, event.event_id),
+    )
+
     decisions = []
-    for event in ledger.events:
+    for event in canonical_events:
         if (
             event.phase == "DECISION"
             and event.payload.get("profile") == "ddc.decision-state.v1"
@@ -38,11 +43,14 @@ def build_evidence_bundle(ledger: LifecycleLedger) -> dict[str, Any]:
         "profile": BUNDLE_PROFILE,
         "lifecycle_id": ledger.lifecycle_id,
         "event_count": len(ledger.events),
-        "event_digests": [event.digest for event in ledger.events],
+        "event_digests": [event.digest for event in canonical_events],
         "checkpoint": checkpoint,
         "branches": {
-            key: [event.event_id for event in value]
-            for key, value in ledger.branches().items()
+            key: [
+                event.event_id
+                for event in sorted(value, key=lambda item: (item.recorded_at, item.event_id))
+            ]
+            for key, value in sorted(ledger.branches().items())
         },
         "decisions": decisions,
         "latest_reconstruction": (
