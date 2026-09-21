@@ -187,6 +187,8 @@ def _profile_evidence(
     available_at="2026-09-20T10:01:00Z",
     created_at="2026-09-20T10:01:00Z",
     availability=None,
+    independence_group=None,
+    contamination=(),
 ):
     return e(
         event_id=event_id,
@@ -208,12 +210,14 @@ def _profile_evidence(
                 "accessible": True,
                 "trusted": True,
             },
+            "independence_group": independence_group,
+            "contamination_from_event_ids": list(contamination),
         },
     )
 
 
 def _decision(*, required=("ev-1",), consulted=("ev-1",), decision="ALLOW",
-              assumptions=(), contradictions=()):
+              assumptions=(), contradictions=(), minimum_independent_sources=0):
     return e(
         event_id="decision-1",
         phase="DECISION",
@@ -227,6 +231,7 @@ def _decision(*, required=("ev-1",), consulted=("ev-1",), decision="ALLOW",
             "consulted_evidence_event_ids": list(consulted),
             "unresolved_assumptions": list(assumptions),
             "contradictions": list(contradictions),
+            "minimum_independent_sources": minimum_independent_sources,
         },
     )
 
@@ -548,3 +553,96 @@ def test_interop_bridge_rejects_non_digest_reference():
 def test_jsonl_import_has_byte_limit():
     with pytest.raises(LifecycleValidationError, match="byte limit"):
         loads_jsonl(" " * 64, max_bytes=16)
+
+
+def test_profiled_decision_does_not_treat_unprofiled_evidence_as_fully_usable():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(e(
+        event_id="ev-1",
+        phase="EVIDENCE_STATE",
+        actor="sensor",
+        event_time="2026-09-20T10:01:00Z",
+        recorded_at="2026-09-20T10:01:00Z",
+        epistemic_state="OBSERVED",
+        payload={
+            "available_to": ["agent-a"],
+            "available_at": "2026-09-20T10:01:00Z",
+        },
+    ))
+    ledger.append(_decision())
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.status == "INVALID"
+    assert assessment.unusable_consulted_event_ids == ("ev-1",)
+
+
+def test_independent_confirmation_counts_groups_not_records():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_profile_evidence(
+        event_id="ev-1",
+        independence_group="provider-a",
+    ))
+    ledger.append(_profile_evidence(
+        event_id="ev-2",
+        independence_group="provider-a",
+    ))
+    ledger.append(_decision(
+        required=("ev-1", "ev-2"),
+        consulted=("ev-1", "ev-2"),
+        minimum_independent_sources=2,
+    ))
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.independent_source_groups == ("provider-a",)
+    assert assessment.independence_shortfall == 1
+    assert assessment.status == "INVALID"
+
+
+def test_two_independent_source_groups_can_satisfy_requirement():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_profile_evidence(
+        event_id="ev-1",
+        independence_group="provider-a",
+    ))
+    ledger.append(_profile_evidence(
+        event_id="ev-2",
+        independence_group="provider-b",
+    ))
+    ledger.append(_decision(
+        required=("ev-1", "ev-2"),
+        consulted=("ev-1", "ev-2"),
+        minimum_independent_sources=2,
+    ))
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.independence_shortfall == 0
+    assert assessment.status == "VALID"
+
+
+def test_contaminated_evidence_cannot_silently_support_allow():
+    ledger = LifecycleLedger("life-1")
+    retry = e(
+        event_id="retry-1",
+        phase="DISPATCH",
+        event_time="2026-09-20T10:00:30Z",
+        recorded_at="2026-09-20T10:00:30Z",
+        epistemic_state="OBSERVED",
+    )
+    ledger.append(retry)
+    ledger.append(_profile_evidence(
+        event_id="ev-1",
+        available_at="2026-09-20T10:01:00Z",
+        created_at="2026-09-20T10:01:00Z",
+        contamination=("retry-1",),
+        independence_group="provider-a",
+    ))
+    ledger.append(_decision())
+    assessment = assess_decision(ledger, "decision-1")
+    assert assessment.contaminated_consulted_event_ids == ("ev-1",)
+    assert assessment.status == "INVALID"
+
+
+def test_contamination_reference_must_exist():
+    ledger = LifecycleLedger("life-1")
+    evidence = _profile_evidence(
+        contamination=("missing-retry",),
+    )
+    with pytest.raises(LifecycleValidationError, match="unknown contaminating event"):
+        ledger.append(evidence)
