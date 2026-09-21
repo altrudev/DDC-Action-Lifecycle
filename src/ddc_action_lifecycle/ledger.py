@@ -12,6 +12,7 @@ PHASES = {
     "INTENT",
     "AUTHORITY",
     "EVIDENCE_STATE",
+    "EVIDENCE_CHANNEL",
     "DECISION",
     "ACTION_RECEIPT",
     "DISPATCH",
@@ -235,6 +236,40 @@ def _validate_profile_payload(phase: str, payload: Mapping[str, Any]) -> None:
                 raise LifecycleValidationError(
                     "contamination_from_event_ids must not contain duplicates"
                 )
+
+    if phase == "EVIDENCE_CHANNEL" and payload.get("profile") == "ddc.evidence-channel.v1":
+        required = {"channel_id", "state", "visible_to"}
+        missing = sorted(required - set(payload))
+        if missing:
+            raise LifecycleValidationError(
+                "evidence-channel profile missing: " + ", ".join(missing)
+            )
+        if not isinstance(payload["channel_id"], str) or not payload["channel_id"]:
+            raise LifecycleValidationError("channel_id must be a non-empty string")
+        if payload["state"] not in {
+            "HEALTHY", "DEGRADED", "STALE", "UNREACHABLE", "UNTRUSTED", "UNKNOWN"
+        }:
+            raise LifecycleValidationError("unsupported evidence channel state")
+        visible_to = payload["visible_to"]
+        if not isinstance(visible_to, (list, tuple)) or not visible_to:
+            raise LifecycleValidationError("visible_to must contain at least one actor")
+        if any(not isinstance(actor, str) or not actor for actor in visible_to):
+            raise LifecycleValidationError("visible_to must contain non-empty actor ids")
+        if len(visible_to) != len(set(visible_to)):
+            raise LifecycleValidationError("visible_to must not contain duplicates")
+        for field in ("delivery_latency_ms", "max_delivery_latency_ms"):
+            value = payload.get(field)
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+            ):
+                raise LifecycleValidationError(f"{field} must be a non-negative integer or null")
+        provenance = payload.get("provenance_event_ids", ())
+        if not isinstance(provenance, (list, tuple)):
+            raise LifecycleValidationError("provenance_event_ids must be an array")
+        if any(not isinstance(item, str) or not item for item in provenance):
+            raise LifecycleValidationError("provenance_event_ids must contain event ids")
+        if len(provenance) != len(set(provenance)):
+            raise LifecycleValidationError("provenance_event_ids must not contain duplicates")
 
     if phase == "DECISION" and payload.get("profile") == "ddc.decision-state.v1":
         required = {
@@ -503,6 +538,18 @@ class LifecycleLedger:
 
         child_event_time = _parse_time(event.event_time)
         child_recorded_at = _parse_time(event.recorded_at)
+
+        if event.phase == "EVIDENCE_CHANNEL" and event.payload.get("profile") == "ddc.evidence-channel.v1":
+            for provenance_id in event.payload.get("provenance_event_ids", ()):
+                provenance_event = self._by_id.get(provenance_id)
+                if provenance_event is None:
+                    raise LifecycleValidationError(
+                        f"unknown channel provenance event: {provenance_id}"
+                    )
+                if _parse_time(provenance_event.recorded_at) > child_recorded_at:
+                    raise LifecycleValidationError(
+                        "channel provenance event was not yet recorded"
+                    )
 
         if event.phase == "EVIDENCE_STATE" and event.payload.get("profile") == "ddc.evidence-state.v1":
             causal_origin = event.payload.get("causal_origin_event_id")
