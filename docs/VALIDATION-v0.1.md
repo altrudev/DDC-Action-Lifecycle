@@ -29,10 +29,16 @@ The evidence bundle must show that tests cover at least:
 - later backfilled evidence;
 - actor-specific evidence horizons;
 - unusable/stale evidence;
+- healthy/degraded/unreachable/unknown evidence-channel states;
+- actor-specific historical channel visibility;
+- required-but-missing channel assurance;
+- channel delivery-latency policy violations;
 - required-but-unconsulted evidence;
 - unresolved contradictions/assumptions on ALLOW;
 - source-independence shortfall;
 - post-action evidence contamination;
+- typed evidence relationships without chronology-to-causality promotion;
+- deterministic evidence bundles across equivalent independent ingestion orders;
 - invalid artifact digests;
 - duplicate JSON keys;
 - NaN/non-finite JSON;
