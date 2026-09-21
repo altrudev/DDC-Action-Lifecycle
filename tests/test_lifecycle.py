@@ -13,7 +13,9 @@ from ddc_action_lifecycle import (
     next_transition_admissibility,
     action_receipt_reference,
     admissibility_event,
+    build_evidence_bundle,
     replay_reconstruction_reference,
+    verify_evidence_bundle,
 )
 from ddc_action_lifecycle.ledger import canonical_bytes
 
@@ -722,3 +724,32 @@ def test_jsonl_rejects_nonfinite_constants():
     raw = '{"x":NaN}\n'
     with pytest.raises(LifecycleValidationError, match="non-finite"):
         loads_jsonl(raw)
+
+
+def test_evidence_bundle_is_deterministic_and_bound_to_checkpoint():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_profile_evidence(independence_group="provider-a"))
+    ledger.append(_decision(minimum_independent_sources=1))
+    bundle = build_evidence_bundle(ledger)
+    verify_evidence_bundle(ledger, bundle)
+
+    again = build_evidence_bundle(ledger)
+    assert bundle == again
+    assert bundle["checkpoint"] == ledger.checkpoint()
+    assert bundle["decisions"][0]["assessment"]["status"] == "VALID"
+    assert bundle["decisions"][0]["next_transition"]["disposition"] == "ALLOW"
+    assert bundle["bundle_digest"].startswith("sha256:")
+
+
+def test_evidence_bundle_detects_lifecycle_change():
+    ledger = LifecycleLedger("life-1")
+    ledger.append(_profile_evidence(independence_group="provider-a"))
+    bundle = build_evidence_bundle(ledger)
+
+    ledger.append(_decision(
+        required=("ev-1",),
+        consulted=("ev-1",),
+        minimum_independent_sources=1,
+    ))
+    with pytest.raises(LifecycleValidationError, match="does not match lifecycle"):
+        verify_evidence_bundle(ledger, bundle)
