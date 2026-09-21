@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .channel import assess_channel_event
 from .ledger import LifecycleEvent, LifecycleLedger, LifecycleValidationError, create_event
 
 
@@ -18,6 +19,10 @@ class DecisionAssessment:
     unavailable_consulted_event_ids: tuple[str, ...]
     unusable_consulted_event_ids: tuple[str, ...]
     contaminated_consulted_event_ids: tuple[str, ...]
+    channel_event_ids: tuple[str, ...]
+    inadequate_channel_event_ids: tuple[str, ...]
+    missing_channel_assurance_event_ids: tuple[str, ...]
+    evidence_channel_status: str
     independent_source_groups: tuple[str, ...]
     minimum_independent_sources: int
     independence_shortfall: int
@@ -37,6 +42,10 @@ class DecisionAssessment:
             "unavailable_consulted_event_ids": list(self.unavailable_consulted_event_ids),
             "unusable_consulted_event_ids": list(self.unusable_consulted_event_ids),
             "contaminated_consulted_event_ids": list(self.contaminated_consulted_event_ids),
+            "channel_event_ids": list(self.channel_event_ids),
+            "inadequate_channel_event_ids": list(self.inadequate_channel_event_ids),
+            "missing_channel_assurance_event_ids": list(self.missing_channel_assurance_event_ids),
+            "evidence_channel_status": self.evidence_channel_status,
             "independent_source_groups": list(self.independent_source_groups),
             "minimum_independent_sources": self.minimum_independent_sources,
             "independence_shortfall": self.independence_shortfall,
@@ -102,6 +111,9 @@ def assess_decision(
 
     unusable: list[str] = []
     contaminated: list[str] = []
+    channel_event_ids: list[str] = []
+    inadequate_channel_event_ids: list[str] = []
+    missing_channel_assurance_event_ids: list[str] = []
     independence_groups: set[str] = set()
     for event_id in consulted:
         if event_id not in horizon_set:
@@ -112,6 +124,16 @@ def assess_decision(
         contamination = evidence.payload.get("contamination_from_event_ids", ())
         if isinstance(contamination, (list, tuple)) and contamination:
             contaminated.append(event_id)
+
+        channel_event_id = evidence.payload.get("channel_event_id")
+        if isinstance(channel_event_id, str) and channel_event_id:
+            channel_event_ids.append(channel_event_id)
+            channel_assessment = assess_channel_event(ledger.get(channel_event_id))
+            if channel_assessment.status != "ADEQUATE":
+                inadequate_channel_event_ids.append(channel_event_id)
+        elif event.payload.get("require_channel_assurance") is True:
+            missing_channel_assurance_event_ids.append(event_id)
+
         group = evidence.payload.get("independence_group")
         if isinstance(group, str) and group:
             independence_groups.add(group)
@@ -128,6 +150,10 @@ def assess_decision(
         reasons.append("consulted evidence was not fully usable at decision time")
     if contaminated:
         reasons.append("consulted evidence carries post-action contamination")
+    if inadequate_channel_event_ids:
+        reasons.append("evidence channel was inadequate at decision time")
+    if missing_channel_assurance_event_ids:
+        reasons.append("required evidence channel assurance was missing")
     if independence_shortfall:
         reasons.append("independent evidence source requirement was not met")
     if contradictions:
@@ -135,7 +161,22 @@ def assess_decision(
     if assumptions:
         reasons.append("decision state contains unresolved assumptions")
 
-    hard_invalid = bool(unavailable_consulted or unusable or contaminated)
+    if inadequate_channel_event_ids:
+        evidence_channel_status = "INADEQUATE"
+    elif missing_channel_assurance_event_ids:
+        evidence_channel_status = "UNKNOWN"
+    elif channel_event_ids:
+        evidence_channel_status = "ADEQUATE"
+    else:
+        evidence_channel_status = "NOT_ASSESSED"
+
+    hard_invalid = bool(
+        unavailable_consulted
+        or unusable
+        or contaminated
+        or inadequate_channel_event_ids
+        or missing_channel_assurance_event_ids
+    )
     if hard_invalid:
         status = "INVALID"
     elif decision == "ALLOW":
@@ -156,6 +197,10 @@ def assess_decision(
         unavailable_consulted_event_ids=unavailable_consulted,
         unusable_consulted_event_ids=tuple(unusable),
         contaminated_consulted_event_ids=tuple(contaminated),
+        channel_event_ids=tuple(channel_event_ids),
+        inadequate_channel_event_ids=tuple(inadequate_channel_event_ids),
+        missing_channel_assurance_event_ids=tuple(missing_channel_assurance_event_ids),
+        evidence_channel_status=evidence_channel_status,
         independent_source_groups=tuple(sorted(independence_groups)),
         minimum_independent_sources=minimum_independent,
         independence_shortfall=independence_shortfall,
