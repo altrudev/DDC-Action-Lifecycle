@@ -26,6 +26,7 @@
         "INTENT",
         "AUTHORITY",
         "EVIDENCE_STATE",
+        "EVIDENCE_CHANNEL",
         "DECISION",
         "ACTION_RECEIPT",
         "DISPATCH",
