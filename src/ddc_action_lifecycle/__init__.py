@@ -2,6 +2,7 @@
 
 from .assurance import (
     DecisionAssessment,
+    admissibility_event,
     assess_decision,
     next_transition_admissibility,
 )
@@ -18,6 +19,7 @@ from .ledger import (
 
 __all__ = [
     "DecisionAssessment",
+    "admissibility_event",
     "LifecycleEvent",
     "LifecycleLedger",
     "LifecycleValidationError",
