@@ -552,6 +552,22 @@ class LifecycleLedger:
                     )
 
         if event.phase == "EVIDENCE_STATE" and event.payload.get("profile") == "ddc.evidence-state.v1":
+            channel_event_id = event.payload.get("channel_event_id")
+            if channel_event_id is not None:
+                channel_event = self._by_id.get(channel_event_id)
+                if channel_event is None:
+                    raise LifecycleValidationError(
+                        f"unknown evidence channel event: {channel_event_id}"
+                    )
+                if channel_event.phase != "EVIDENCE_CHANNEL":
+                    raise LifecycleValidationError(
+                        "channel_event_id must reference an EVIDENCE_CHANNEL event"
+                    )
+                if _parse_time(channel_event.recorded_at) > child_recorded_at:
+                    raise LifecycleValidationError(
+                        "evidence channel event was not yet recorded"
+                    )
+
             causal_origin = event.payload.get("causal_origin_event_id")
             if causal_origin is not None:
                 if not isinstance(causal_origin, str) or not causal_origin:
