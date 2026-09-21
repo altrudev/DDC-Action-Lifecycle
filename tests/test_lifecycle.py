@@ -9,6 +9,7 @@ from ddc_action_lifecycle import (
     loads_jsonl,
     next_transition_admissibility,
 )
+from ddc_action_lifecycle.ledger import canonical_bytes
 
 
 def e(**kw):
@@ -372,3 +373,56 @@ def test_jsonl_rejects_digest_tampering():
     )
     with pytest.raises(LifecycleValidationError, match="digest mismatch"):
         loads_jsonl(encoded)
+
+
+def test_canonicalization_uses_utf16_key_order():
+    assert canonical_bytes({"\ue000": 1, "\U00010000": 2}) == (
+        b'{"\xf0\x90\x80\x80":2,"\xee\x80\x80":1}'
+    )
+
+
+def test_equivalent_timezone_forms_canonicalize_event_timestamps():
+    event = e(
+        event_id="time-normalized",
+        phase="INTENT",
+        event_time="2026-09-20T03:00:00-07:00",
+        recorded_at="2026-09-20T10:00:00Z",
+        epistemic_state="OBSERVED",
+    )
+    assert event.event_time == "2026-09-20T10:00:00.000000Z"
+
+
+def test_ledger_enforces_resource_bounds():
+    ledger = LifecycleLedger("life-1", max_events=1)
+    ledger.append(e(
+        event_id="one",
+        phase="INTENT",
+        event_time="2026-09-20T10:00:00Z",
+        epistemic_state="OBSERVED",
+    ))
+    with pytest.raises(LifecycleValidationError, match="event limit"):
+        ledger.append(e(
+            event_id="two",
+            phase="OBSERVATION",
+            event_time="2026-09-20T10:00:00Z",
+            epistemic_state="OBSERVED",
+        ))
+
+
+def test_ledger_rejects_parent_fan_in_over_limit():
+    ledger = LifecycleLedger("life-1", max_parents=1)
+    for event_id in ("p1", "p2"):
+        ledger.append(e(
+            event_id=event_id,
+            phase="OBSERVATION",
+            event_time="2026-09-20T10:00:00Z",
+            epistemic_state="OBSERVED",
+        ))
+    with pytest.raises(LifecycleValidationError, match="parent event limit"):
+        ledger.append(e(
+            event_id="child-many",
+            phase="RECONSTRUCTION",
+            event_time="2026-09-20T10:00:00Z",
+            parent_event_ids=["p1", "p2"],
+            epistemic_state="INFERRED",
+        ))
