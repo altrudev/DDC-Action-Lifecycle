@@ -1,5 +1,6 @@
 """DDC Action Lifecycle reference implementation."""
 
+from .bundle import build_evidence_bundle, verify_evidence_bundle
 from .assurance import (
     DecisionAssessment,
     admissibility_event,
@@ -19,6 +20,7 @@ from .ledger import (
 
 __all__ = [
     "DecisionAssessment",
+    "build_evidence_bundle",
     "admissibility_event",
     "LifecycleEvent",
     "LifecycleLedger",
@@ -34,6 +36,7 @@ __all__ = [
     "next_transition_admissibility",
     "replay_reconstruction_reference",
     "save_jsonl",
+    "verify_evidence_bundle",
 ]
 
 __version__ = "0.1.0"
