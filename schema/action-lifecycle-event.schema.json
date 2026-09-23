@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ddcal.ca/schema/action-lifecycle-event.schema.json",
+  "title": "DDC Action Lifecycle Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "event_type", "recorded_at", "branch_id", "confidence_class", "payload"],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1},
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "INTENT",
+        "AUTHORITY",
+        "WORLD_STATE_MUTATION",
+        "EVIDENCE",
+        "EVIDENCE_HORIZON",
+        "DECISION",
+        "ACTION_RECEIPT",
+        "DISPATCH",
+        "EXECUTION",
+        "OBSERVATION",
+        "CONSEQUENCE",
+        "BRANCH_FORK",
+        "REPLAY",
+        "ASSURANCE_ASSESSMENT",
+        "ADMISSIBILITY"
+      ]
+    },
+    "recorded_at": {"type": "string", "format": "date-time"},
+    "branch_id": {"type": "string", "minLength": 1},
+    "parent_branch_id": {"type": ["string", "null"]},
+    "transition_id": {"type": ["string", "null"]},
+    "caused_by": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "evidence_horizon_id": {"type": ["string", "null"]},
+    "authority_ref": {"type": ["string", "null"]},
+    "decision_ref": {"type": ["string", "null"]},
+    "receipt_ref": {"type": ["string", "null"]},
+    "confidence_class": {
+      "type": "string",
+      "enum": ["OBSERVED", "DERIVED", "RECONSTRUCTED", "INFERRED", "COUNTERFACTUAL", "UNKNOWN"]
+    },
+    "status": {
+      "type": ["string", "null"],
+      "enum": [
+        null,
+        "VALID",
+        "INVALID",
+        "DIVERGED",
+        "SUCCEEDED",
+        "FAILED",
+        "ABORTED",
+        "UNKNOWN",
+        "UNOBSERVED",
+        "UNAVAILABLE",
+        "UNREACHABLE",
+        "UNAUTHORIZED",
+        "STALE",
+        "CONFLICTED",
+        "UNVERIFIABLE"
+      ]
+    },
+    "payload": {"type": "object"}
+  }
+}
