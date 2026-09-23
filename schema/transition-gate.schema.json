@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ddcal.ca/schema/transition-gate.schema.json",
+  "title": "DDC TransitionGate Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gate_id","boundary","action_id","transition_id","delta_ref","resonance","decision"],
+  "properties": {
+    "gate_id":{"type":"string","minLength":1},
+    "boundary":{
+      "enum":["DECISION_TO_RECEIPT","RECEIPT_TO_DISPATCH","DISPATCH_TO_EXECUTION","EXECUTION_TO_CONSEQUENCE","CONSEQUENCE_TO_NEXT"]
+    },
+    "action_id":{"type":"string","minLength":1},
+    "transition_id":{"type":"string","minLength":1},
+    "delta_ref":{"type":["string","null"]},
+    "resonance":{
+      "type":"object",
+      "additionalProperties":false,
+      "required":["overall","dimensions"],
+      "properties":{
+        "overall":{"enum":["RESONANT","DRIFTED","UNKNOWN"]},
+        "dimensions":{
+          "type":"object",
+          "additionalProperties":false,
+          "properties":{
+            "identity":{"enum":["RESONANT","DRIFTED","UNKNOWN"]},
+            "target":{"enum":["RESONANT","DRIFTED","UNKNOWN"]},
+            "parameters":{"enum":["RESONANT","DRIFTED","UNKNOWN"]},
+            "authority":{"enum":["RESONANT","DRIFTED","UNKNOWN"]},
+            "temporal":{"enum":["RESONANT","DRIFTED","UNKNOWN"]},
+            "policy":{"enum":["RESONANT","DRIFTED","UNKNOWN"]},
+            "dependencies":{"enum":["RESONANT","DRIFTED","UNKNOWN"]},
+            "effect":{"enum":["RESONANT","DRIFTED","UNKNOWN"]}
+          }
+        }
+      }
+    },
+    "decision":{"enum":["CONTINUE","RECHECK","REAUTHORIZE","RECOVER","WAIT","ABORT","UNKNOWN"]},
+    "reason":{"type":["string","null"]}
+  }
+}
