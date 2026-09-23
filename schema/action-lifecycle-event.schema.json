@@ -4,7 +4,7 @@
   "title": "DDC Action Lifecycle Event",
   "type": "object",
   "additionalProperties": false,
-  "required": ["event_id", "event_type", "recorded_at", "branch_id", "confidence_class"],
+  "required": ["event_id", "event_type", "recorded_at", "branch_id", "confidence_class", "payload"],
   "properties": {
     "event_id": {"type": "string", "minLength": 1},
     "event_type": {
@@ -12,6 +12,7 @@
       "enum": [
         "INTENT",
         "AUTHORITY",
+        "WORLD_STATE_MUTATION",
         "EVIDENCE",
         "EVIDENCE_HORIZON",
         "DECISION",
@@ -45,7 +46,23 @@
     },
     "status": {
       "type": ["string", "null"],
-      "enum": [null, "VALID", "INVALID", "DIVERGED", "SUCCEEDED", "FAILED", "ABORTED", "UNKNOWN"]
+      "enum": [
+        null,
+        "VALID",
+        "INVALID",
+        "DIVERGED",
+        "SUCCEEDED",
+        "FAILED",
+        "ABORTED",
+        "UNKNOWN",
+        "UNOBSERVED",
+        "UNAVAILABLE",
+        "UNREACHABLE",
+        "UNAUTHORIZED",
+        "STALE",
+        "CONFLICTED",
+        "UNVERIFIABLE"
+      ]
     },
     "payload": {"type": "object"}
   }
