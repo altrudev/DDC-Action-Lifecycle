@@ -39,13 +39,15 @@ Core rules:
 3. Dispatch does not prove execution; observation does not prove causation.
 4. Retries and recovery paths are distinct branches, not edits to prior history.
 5. Evidence existence, reachability, freshness, authorization, trustworthiness, and consultation remain separate facts.
-6. Unknown or unavailable evidence remains explicit; it is never converted into fabricated certainty.
+6. World-state changes and evidence about those changes are distinct events.
+7. Unknown or unavailable evidence remains explicit; it is never converted into fabricated certainty.
+8. Evidence horizons are content-addressed so accidental or retrospective mutation is detectable.
 
 ## First canonical fixture
 
 `AL-001 — Mid-Run State Mutation and Evidence-Latency Recovery`
 
-AL-001 intentionally changes target state after the original decision, delays propagation of the new evidence, allows the committed action to reach execution, then verifies that recovery opens a new branch without rewriting the original decision horizon.
+AL-001 changes target state after the original decision, records that mutation independently from evidence about it, delays propagation of the new evidence, allows the committed action to reach execution, then verifies that recovery opens a new branch without rewriting the original decision horizon.
 
 See:
 
@@ -56,4 +58,4 @@ See:
 
 The broader DDC architecture is designed and developed by **Valentyn Rukhaylo / Altru.dev**.
 
-Status: executable reference fixture under construction.
+Status: first executable conformance fixture implemented; broader runtime integration remains in progress.
