@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ddcal.ca/schema/frequency-delta.schema.json",
+  "title": "DDC FrequencyDelta",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["delta_id","from_state","to_state","changed_dimensions","impact"],
+  "properties": {
+    "delta_id":{"type":"string","minLength":1},
+    "from_state":{"type":"string","minLength":1},
+    "to_state":{"type":"string","minLength":1},
+    "changed_dimensions":{
+      "type":"object",
+      "additionalProperties":false,
+      "properties":{
+        "target_state":{"type":"boolean"},
+        "authority":{"type":"boolean"},
+        "evidence":{"type":"boolean"},
+        "policy":{"type":"boolean"},
+        "dependencies":{"type":"boolean"},
+        "environment":{"type":"boolean"},
+        "tools":{"type":"boolean"},
+        "runtime_context":{"type":"boolean"},
+        "recoverability":{"type":"boolean"},
+        "semantic_meaning":{"type":"boolean"}
+      }
+    },
+    "impact":{
+      "enum":["NONE","NON_CONSEQUENTIAL","RECHECK_REQUIRED","REAUTHORIZE_REQUIRED","RECOVERY_REQUIRED","HOLD_UNKNOWN"]
+    },
+    "reason":{"type":["string","null"]}
+  }
+}
