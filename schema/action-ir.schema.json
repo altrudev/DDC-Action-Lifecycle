@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ddcal.ca/schema/action-ir.schema.json",
+  "title": "DDC ActionIR",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action_id","transition_id","branch_id","identity","intent","target",
+    "parameters","authority","evidence_horizon","policy","environment",
+    "dependencies","expected_effect","uncertainty","provenance",
+    "runtime_context","recoverability"
+  ],
+  "properties": {
+    "action_id": {"type":"string","minLength":1},
+    "transition_id": {"type":"string","minLength":1},
+    "branch_id": {"type":"string","minLength":1},
+    "identity": {"type":"object"},
+    "intent": {"type":"object"},
+    "target": {"type":"object"},
+    "parameters": {"type":"object"},
+    "authority": {
+      "type":"object",
+      "required":["authority_ref","status"],
+      "properties":{
+        "authority_ref":{"type":"string","minLength":1},
+        "status":{"enum":["VALID","INVALID","UNKNOWN"]}
+      }
+    },
+    "evidence_horizon": {
+      "type":"object",
+      "required":["horizon_id","sha256"],
+      "properties":{
+        "horizon_id":{"type":"string","minLength":1},
+        "sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+      }
+    },
+    "policy": {"type":"object"},
+    "environment": {"type":"object"},
+    "dependencies": {"type":"array","items":{"type":"object"}},
+    "expected_effect": {"type":"object"},
+    "actual_effect": {"type":["object","null"]},
+    "uncertainty": {
+      "type":"array",
+      "items":{"enum":["UNKNOWN","UNOBSERVED","UNAVAILABLE","UNREACHABLE","UNAUTHORIZED","STALE","CONFLICTED","UNVERIFIABLE"]},
+      "uniqueItems":true
+    },
+    "provenance": {"type":"object"},
+    "runtime_context": {"$ref":"#/$defs/runtimeContext"},
+    "recoverability": {"$ref":"#/$defs/recoverability"}
+  },
+  "$defs": {
+    "runtimeContext": {
+      "type":"object",
+      "additionalProperties":true,
+      "properties":{
+        "health":{"enum":["HEALTHY","DEGRADED","FAILED","UNKNOWN"]},
+        "heartbeat":{"enum":["ALIVE","STALLED","WAITING","DEGRADED","DIVERGENT","RECOVERING","UNKNOWN"]}
+      }
+    },
+    "recoverability": {
+      "type":"object",
+      "required":["status"],
+      "properties":{
+        "status":{"enum":["VERIFIED","PARTIAL","UNAVAILABLE","UNKNOWN"]},
+        "pre_state_captured":{"type":["boolean","null"]},
+        "rollback_available":{"type":["boolean","null"]},
+        "backup_current":{"type":["boolean","null"]},
+        "restore_tested":{"type":["boolean","null"]}
+      }
+    }
+  }
+}
